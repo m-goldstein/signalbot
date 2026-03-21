@@ -9,7 +9,7 @@ import { isTradingSessionOpen } from "@/lib/client/market-session";
 import { ScreenerGptResponse, ScreenerResponse, ScreenerRow, ScreenerSortField } from "@/lib/screener/types";
 import { UniverseTier } from "@/lib/universe/types";
 import { ScreenerDetailChart } from "@/components/screener-detail-chart";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./screener-table.module.css";
 
 const SORT_OPTIONS: Array<{ value: ScreenerSortField; label: string }> = [
@@ -304,6 +304,8 @@ export function ScreenerTable({
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const loadInFlightRef = useRef(false);
+  const hasLoadedRowsRef = useRef(false);
   const analysisQueryKey = useMemo(
     () => createAnalysisQueryKey(["screener", tier, sort, direction, historyStartInput, ...selectedRows.slice().sort()]),
     [direction, historyStartInput, selectedRows, sort, tier],
@@ -311,9 +313,18 @@ export function ScreenerTable({
 
   async function loadRows(options?: { preserveState?: boolean }) {
     const preserveState = options?.preserveState ?? false;
+    const isBackgroundRefresh = preserveState && hasLoadedRowsRef.current;
 
+    if (loadInFlightRef.current) {
+      return;
+    }
+
+    loadInFlightRef.current = true;
     setIsLoading(true);
-    setError("");
+
+    if (!isBackgroundRefresh) {
+      setError("");
+    }
 
     try {
       const params = new URLSearchParams({
@@ -327,12 +338,13 @@ export function ScreenerTable({
 
       if (!response.ok) {
         setError(payload.error || "Screener request failed.");
-        setRows([]);
         return;
       }
 
       setRows(payload.rows);
       setHistoryStart(payload.historyStart);
+      hasLoadedRowsRef.current = true;
+      setError("");
 
       if (!preserveState) {
         setAnalysis(null);
@@ -360,8 +372,8 @@ export function ScreenerTable({
       }
     } catch {
       setError("Network request failed.");
-      setRows([]);
     } finally {
+      loadInFlightRef.current = false;
       setIsLoading(false);
     }
   }
