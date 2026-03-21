@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { OpenInsiderDashboard } from "@/components/openinsider-dashboard";
+import { LogoutButton } from "@/components/logout-button";
 import styles from "./page.module.css";
 
 export default function Home() {
@@ -13,6 +14,7 @@ export default function Home() {
           </div>
           <nav className={styles.nav}>
             <Link href="/screener">Screener</Link>
+            <LogoutButton />
           </nav>
         </section>
 

@@ -1,0 +1,58 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.panel {
+  width: 100%;
+  max-width: 360px;
+  display: grid;
+  gap: 16px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 20px;
+}
+
+.copy {
+  display: grid;
+  gap: 6px;
+}
+
+.copy h1 {
+  font-size: 24px;
+}
+
+.copy p {
+  color: #4b5563;
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+}
+
+.form input {
+  min-height: 40px;
+  border: 1px solid #d1d5db;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.form button {
+  min-height: 40px;
+  border: 1px solid #d1d5db;
+  background: #111827;
+  color: #fff;
+}
+
+.error {
+  color: #b91c1c;
+}

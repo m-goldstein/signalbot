@@ -18,10 +18,17 @@
   justify-content: flex-start;
 }
 
-.backLink {
+.nav {
+  display: flex;
+  gap: 8px;
+}
+
+.backLink,
+.nav button {
   padding: 8px 12px;
   border: 1px solid #d1d5db;
   background: #fff;
+  font: inherit;
 }
 
 @media (max-width: 640px) {
