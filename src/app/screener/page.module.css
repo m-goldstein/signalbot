@@ -1,0 +1,31 @@
+.page {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  padding: 16px;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 1320px;
+}
+
+.topBar {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.backLink {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 12px;
+  }
+}

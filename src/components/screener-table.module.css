@@ -1,0 +1,421 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 16px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 24px;
+}
+
+.eyebrow {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.header h1 {
+  max-width: 16ch;
+  margin-top: 10px;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.copy {
+  max-width: 54ch;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filters span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.filters select {
+  min-height: 40px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 0 14px;
+  font: inherit;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  min-height: 40px;
+}
+
+.selectionHint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.analysisWrap {
+  display: grid;
+  gap: 12px;
+}
+
+.sectionActions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.globalSelect {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #374151;
+  font-size: 13px;
+}
+
+.sectionBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 12px;
+}
+
+.sectionHeader h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sectionHeader p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.detailWrap {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #d1d5db;
+  padding: 16px;
+}
+
+.detailHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.detailMeta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detailMeta article {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #e5e7eb;
+  padding: 12px;
+}
+
+.detailMeta span {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.analysisWrap h2 {
+  font-size: 18px;
+}
+
+.analysisTableWrap {
+  overflow-x: auto;
+  border: 1px solid #d1d5db;
+}
+
+.analysisTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 14px;
+}
+
+.analysisTable th,
+.analysisTable td {
+  padding: 12px 14px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.analysisTable th {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.analysisSymbol {
+  width: 88px;
+  font-family: var(--font-mono), monospace;
+  font-weight: 600;
+}
+
+.analysisJudgment {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.rationale {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.6;
+}
+
+.meta article {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 96px;
+  padding: 18px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+.meta span {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+}
+
+.meta strong {
+  font-size: 24px;
+}
+
+.error {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: var(--danger);
+  padding: 14px 16px;
+}
+
+.tableWrap {
+  overflow-x: visible;
+  border: 1px solid #d1d5db;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.table th,
+.table td {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.table th:first-child,
+.table td:first-child {
+  width: 40px;
+  padding-left: 8px;
+  padding-right: 8px;
+  text-align: center;
+}
+
+.table th:nth-child(2) {
+  width: 13%;
+}
+
+.table th:nth-child(3) {
+  width: 10%;
+}
+
+.table th:nth-child(4) {
+  width: 9%;
+}
+
+.table th:nth-child(5),
+.table th:nth-child(6),
+.table th:nth-child(7),
+.table th:nth-child(8),
+.table th:nth-child(9),
+.table th:nth-child(10) {
+  width: 11%;
+}
+
+.clickableRow {
+  cursor: pointer;
+}
+
+.clickableRow:hover {
+  background: #f9fafb;
+}
+
+.activeRow {
+  cursor: pointer;
+  background: #eff6ff;
+}
+
+.table th {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sortButton,
+.sortButtonActive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.sortButtonActive {
+  color: #111827;
+}
+
+.sortArrow {
+  min-width: 10px;
+  color: #2563eb;
+}
+
+.sortHint {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.symbolCell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.symbolCell span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.metricCell {
+  display: grid;
+  gap: 6px;
+}
+
+.metricCell > div {
+  display: grid;
+  gap: 2px;
+}
+
+.metricLabel {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+}
+
+.metricCell strong {
+  font-size: 11px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.positive {
+  color: #065f46;
+}
+
+.negative {
+  color: var(--danger);
+}
+
+.empty {
+  color: var(--muted);
+}
+
+@media (max-width: 980px) {
+  .header,
+  .filters,
+  .meta,
+  .detailMeta {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: start;
+  }
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 12px;
+  }
+
+  .header h1 {
+    font-size: 22px;
+  }
+
+  .analysisTable {
+    min-width: 0;
+  }
+
+  .tableWrap {
+    overflow-x: auto;
+  }
+
+  .table {
+    min-width: 900px;
+  }
+}
