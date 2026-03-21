@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Signalbot",
+  title: "Wolfdesk",
   description: "Internal research tool for insider activity and market data.",
 };
 
