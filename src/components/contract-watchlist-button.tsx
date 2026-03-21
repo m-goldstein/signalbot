@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "./contract-watchlist-button.module.css";
 import {
   CONTRACT_WATCHLIST_EVENT,
+  clearContractWatchlist,
   ContractWatchlistEntry,
   readContractWatchlist,
   removeContractFromWatchlist,
@@ -59,9 +60,16 @@ export function ContractWatchlistButton() {
         <div className={styles.popup}>
           <div className={styles.header}>
             <strong>Saved contracts</strong>
-            <button type="button" className={styles.closeButton} onClick={() => setIsOpen(false)}>
-              Close
-            </button>
+            <div className={styles.headerActions}>
+              {sortedEntries.length ? (
+                <button type="button" className={styles.clearButton} onClick={() => clearContractWatchlist()}>
+                  Remove all
+                </button>
+              ) : null}
+              <button type="button" className={styles.closeButton} onClick={() => setIsOpen(false)}>
+                Close
+              </button>
+            </div>
           </div>
 
           {sortedEntries.length ? (

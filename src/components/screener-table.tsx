@@ -786,16 +786,15 @@ export function ScreenerTable({
                                           ? `${detail.name} / ${detail.segment}`
                                           : ""}
                                     </span>
-                                    <button
-                                      type="button"
-                                      className={styles.detailToggleButton}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        toggleRowGraph(rowKey);
-                                      }}
-                                    >
-                                      {shouldShowGraphs ? "Hide graph" : "Show graph"}
-                                    </button>
+                                    <label className={styles.detailToggleCheckbox}>
+                                      <input
+                                        type="checkbox"
+                                        checked={shouldShowGraphs}
+                                        onChange={() => toggleRowGraph(rowKey)}
+                                        onClick={(event) => event.stopPropagation()}
+                                      />
+                                      <span>Show graph</span>
+                                    </label>
                                   </div>
                                 </div>
 

@@ -206,12 +206,18 @@
   flex-wrap: wrap;
 }
 
-.detailToggleButton {
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  font: inherit;
+.detailToggleCheckbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #374151;
+  font-size: 14px;
+}
+
+.detailToggleCheckbox input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
 }
 
 .detailMeta {

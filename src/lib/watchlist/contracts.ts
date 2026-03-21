@@ -76,3 +76,7 @@ export function removeContractFromWatchlist(contractSymbol: string) {
   const current = readContractWatchlist();
   writeContractWatchlist(current.filter((entry) => entry.symbol !== contractSymbol));
 }
+
+export function clearContractWatchlist() {
+  writeContractWatchlist([]);
+}

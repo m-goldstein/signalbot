@@ -53,7 +53,14 @@
   gap: 12px;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .closeButton,
+.clearButton,
 .removeButton {
   padding: 8px 10px;
   border: 1px solid var(--panel-border);
