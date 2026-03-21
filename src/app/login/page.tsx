@@ -7,8 +7,8 @@ export default function LoginPage() {
     <div className={styles.page}>
       <main className={styles.panel}>
         <div className={styles.copy}>
-          <h1>Signalbot login</h1>
-          <p>Authentication is required to use this platform.</p>
+          <h1>Wolfdesk login</h1>
+          <p>Authentication is required to use this platform. Please reach out to the administrator if you would like access.</p>
         </div>
         <Suspense fallback={null}>
           <LoginForm />
