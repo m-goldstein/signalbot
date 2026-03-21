@@ -76,3 +76,26 @@ export type ScreenerGptResponse = {
     rationale: string;
   }[];
 };
+
+export type ScreenerAnalysisEntry = {
+  symbol: string;
+  name: string;
+  segment: string;
+  tier: UniverseTier;
+};
+
+export type ScreenerAnalysisJobStatus = "queued" | "running" | "completed" | "failed";
+
+export type ScreenerAnalysisJobRecord = {
+  id: string;
+  requestKey: string;
+  symbol: string;
+  status: ScreenerAnalysisJobStatus;
+  inputHash: string;
+  requestedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  model: string | null;
+  result: ScreenerGptResponse["results"][number] | null;
+};

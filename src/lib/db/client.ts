@@ -90,6 +90,26 @@ async function initializeSqlite(sqlite: SqliteClient) {
       ON watchlist_analysis_jobs (contract_symbol, requested_at DESC);
     CREATE INDEX IF NOT EXISTS idx_watchlist_jobs_status_requested
       ON watchlist_analysis_jobs (status, requested_at ASC);
+    CREATE TABLE IF NOT EXISTS screener_analysis_jobs (
+      id TEXT PRIMARY KEY,
+      request_key TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      row_name TEXT NOT NULL,
+      segment TEXT NOT NULL,
+      tier TEXT NOT NULL,
+      input_hash TEXT NOT NULL,
+      status TEXT NOT NULL,
+      requested_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      error_message TEXT,
+      model TEXT,
+      result_payload TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_screener_jobs_symbol_requested
+      ON screener_analysis_jobs (symbol, requested_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_screener_jobs_status_requested
+      ON screener_analysis_jobs (status, requested_at ASC);
   `);
 }
 
@@ -117,6 +137,32 @@ async function initializePostgres(pg: PostgresClient) {
   await pg.unsafe(`
     CREATE INDEX IF NOT EXISTS idx_watchlist_jobs_status_requested
     ON watchlist_analysis_jobs (status, requested_at ASC);
+  `);
+  await pg.unsafe(`
+    CREATE TABLE IF NOT EXISTS screener_analysis_jobs (
+      id TEXT PRIMARY KEY,
+      request_key TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      row_name TEXT NOT NULL,
+      segment TEXT NOT NULL,
+      tier TEXT NOT NULL,
+      input_hash TEXT NOT NULL,
+      status TEXT NOT NULL,
+      requested_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      error_message TEXT,
+      model TEXT,
+      result_payload TEXT
+    );
+  `);
+  await pg.unsafe(`
+    CREATE INDEX IF NOT EXISTS idx_screener_jobs_symbol_requested
+    ON screener_analysis_jobs (symbol, requested_at DESC);
+  `);
+  await pg.unsafe(`
+    CREATE INDEX IF NOT EXISTS idx_screener_jobs_status_requested
+    ON screener_analysis_jobs (status, requested_at ASC);
   `);
 }
 

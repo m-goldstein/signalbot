@@ -6,7 +6,13 @@ import {
   writeCachedScreenerAnalysis,
 } from "@/lib/client/analysis-cache";
 import { isTradingSessionOpen } from "@/lib/client/market-session";
-import { ScreenerGptResponse, ScreenerResponse, ScreenerRow, ScreenerSortField } from "@/lib/screener/types";
+import {
+  ScreenerAnalysisEntry,
+  ScreenerGptResponse,
+  ScreenerResponse,
+  ScreenerRow,
+  ScreenerSortField,
+} from "@/lib/screener/types";
 import { UniverseTier } from "@/lib/universe/types";
 import { ScreenerDetailChart } from "@/components/screener-detail-chart";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -211,6 +217,35 @@ type ScreenerTableProps = {
   maxHistoryStartInput: string;
 };
 
+type ScreenerJobState = {
+  id: string;
+  symbol: string;
+  status: "queued" | "running" | "completed" | "failed";
+  requestedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  model: string | null;
+  result: ScreenerGptResponse["results"][number] | null;
+};
+
+function formatJobTime(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function ScreenerTable({
   initialHistoryStartInput,
   maxHistoryStartInput,
@@ -225,6 +260,7 @@ export function ScreenerTable({
   const [showGraphs, setShowGraphs] = useState(true);
   const [rowGraphVisibility, setRowGraphVisibility] = useState<Record<string, boolean>>({});
   const [analysis, setAnalysis] = useState<ScreenerGptResponse | null>(null);
+  const [jobs, setJobs] = useState<ScreenerJobState[]>([]);
   const [expandedRowKey, setExpandedRowKey] = useState<string>("");
   const [detail, setDetail] = useState<{
     symbol: string;
@@ -310,6 +346,35 @@ export function ScreenerTable({
     () => createAnalysisQueryKey(["screener", tier, sort, direction, historyStartInput, ...selectedRows.slice().sort()]),
     [direction, historyStartInput, selectedRows, sort, tier],
   );
+  const visibleSymbolKey = useMemo(() => rows.map((row) => row.symbol).join(","), [rows]);
+  const selectedAnalysisEntries = useMemo<ScreenerAnalysisEntry[]>(
+    () =>
+      rows
+        .filter((row) => selectedRows.includes(row.symbol))
+        .map((row) => ({
+          symbol: row.symbol,
+          name: row.name,
+          segment: row.segment,
+          tier: row.tier,
+        })),
+    [rows, selectedRows],
+  );
+  const pendingJobs = useMemo(
+    () => jobs.filter((job) => job.status === "queued" || job.status === "running"),
+    [jobs],
+  );
+  const modelUsed = jobs.find((job) => job.model)?.model ?? null;
+  const completedSelectedResults = useMemo(
+    () =>
+      selectedRows
+        .map((symbol) => jobs.find((job) => job.symbol === symbol)?.result ?? null)
+        .filter((result): result is NonNullable<ScreenerJobState["result"]> => Boolean(result)),
+    [jobs, selectedRows],
+  );
+  const trayJobs = useMemo(
+    () => [...jobs].sort((left, right) => right.requestedAt.localeCompare(left.requestedAt)).slice(0, 8),
+    [jobs],
+  );
 
   async function loadRows(options?: { preserveState?: boolean }) {
     const preserveState = options?.preserveState ?? false;
@@ -382,8 +447,64 @@ export function ScreenerTable({
     void loadRows();
   }, [direction, historyStartInput, sort, tier]);
 
+  async function refreshStatuses() {
+    if (!rows.length) {
+      setJobs([]);
+      return;
+    }
+
+    const params = new URLSearchParams({
+      symbols: rows.map((row) => row.symbol).join(","),
+    });
+    const response = await fetch(`/api/screener/analyze/status?${params.toString()}`);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to refresh screener statuses.");
+    }
+
+    setJobs(Array.isArray(payload.jobs) ? payload.jobs : []);
+  }
+
+  async function kickWorker(targetEntries: ScreenerAnalysisEntry[], jobIds?: string[]) {
+    void fetch("/api/screener/analyze/run", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ids: jobIds,
+        historyStart: historyStartInput,
+        entriesBySymbol: Object.fromEntries(targetEntries.map((entry) => [entry.symbol, entry])),
+      }),
+    }).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    if (!rows.length) {
+      setJobs([]);
+      return;
+    }
+
+    void refreshStatuses().catch(() => undefined);
+  }, [visibleSymbolKey]);
+
   useEffect(() => {
     const cached = readCachedScreenerAnalysis(SCREENER_GPT_CACHE_KEY, analysisQueryKey);
+    const completedAnalysis =
+      selectedRows.length && completedSelectedResults.length
+        ? {
+            model: modelUsed ?? "unknown",
+            topN: completedSelectedResults.length,
+            results: completedSelectedResults,
+          }
+        : null;
+
+    if (completedAnalysis) {
+      setAnalysis(completedAnalysis);
+      writeCachedScreenerAnalysis(SCREENER_GPT_CACHE_KEY, analysisQueryKey, completedAnalysis);
+      return;
+    }
 
     if (cached) {
       setAnalysis(cached);
@@ -406,13 +527,37 @@ export function ScreenerTable({
         ? current
         : null;
     });
-  }, [analysisQueryKey, direction, historyStartInput, sort, tier]);
+  }, [analysisQueryKey, completedSelectedResults, direction, historyStartInput, modelUsed, selectedRows.length, sort, tier]);
 
   useEffect(() => {
     if (!selectedRows.length) {
       setAnalysis(null);
     }
   }, [selectedRows]);
+
+  useEffect(() => {
+    if (!pendingJobs.length) {
+      return;
+    }
+
+    void kickWorker(
+      rows
+        .filter((row) => pendingJobs.some((job) => job.symbol === row.symbol))
+        .map((row) => ({
+          symbol: row.symbol,
+          name: row.name,
+          segment: row.segment,
+          tier: row.tier,
+        })),
+      pendingJobs.map((job) => job.id),
+    );
+
+    const interval = window.setInterval(() => {
+      void refreshStatuses().catch(() => undefined);
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [historyStartInput, pendingJobs.length, visibleSymbolKey]);
 
   useEffect(() => {
     writeStoredSelectedRows(selectedRows);
@@ -437,20 +582,19 @@ export function ScreenerTable({
     setError("");
 
     try {
-      const params = new URLSearchParams({
-        tier,
-        sort,
-        direction,
-        historyStart: historyStartInput,
-      });
-      if (!selectedRows.length) {
+      if (!selectedAnalysisEntries.length) {
         setAnalysis(null);
         setError("Select at least one row before running GPT analysis.");
         return;
       }
-      params.set("symbols", selectedRows.join(","));
-      const response = await fetch(`/api/screener/analyze?${params.toString()}`);
-      const payload = (await response.json()) as ScreenerGptResponse & { error?: string };
+      const response = await fetch("/api/screener/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ entries: selectedAnalysisEntries }),
+      });
+      const payload = (await response.json()) as { jobs?: Array<{ id?: string }>; error?: string };
 
       if (!response.ok) {
         setAnalysis(null);
@@ -458,8 +602,11 @@ export function ScreenerTable({
         return;
       }
 
-      setAnalysis(payload);
-      writeCachedScreenerAnalysis(SCREENER_GPT_CACHE_KEY, analysisQueryKey, payload);
+      const jobIds = Array.isArray(payload.jobs)
+        ? payload.jobs.map((job) => String(job.id ?? "")).filter(Boolean)
+        : [];
+      await refreshStatuses();
+      kickWorker(selectedAnalysisEntries, jobIds);
     } catch {
       setAnalysis(null);
       setError("Screener analysis request failed.");
@@ -533,6 +680,7 @@ export function ScreenerTable({
   const defenseRows = rows.filter((row) => row.section === "defense");
   const selectedRowSet = new Set(selectedRows);
   const selectedRowsData = rows.filter((row) => selectedRowSet.has(row.symbol));
+  const selectedJobSet = new Set(selectedRows);
 
   function toggleSectionRows(sectionRows: ScreenerRow[]) {
     const symbols = sectionRows.map((row) => row.symbol);
@@ -833,7 +981,7 @@ export function ScreenerTable({
   }
 
   return (
-    <section className={styles.shell}>
+    <section className={`${styles.shell} ${trayJobs.length ? styles.shellWithTray : ""}`}>
       <div className={styles.header}>
         <div>
           <p className={styles.eyebrow}>Universe Screener</p>
@@ -897,11 +1045,11 @@ export function ScreenerTable({
 
       <div className={styles.actions}>
         <button type="button" onClick={() => void runAnalysis()} disabled={!selectedRows.length || isAnalyzing}>
-          {isAnalyzing ? "Analyzing..." : `Run GPT analysis on ${selectedRows.length} selected`}
+          {isAnalyzing ? "Queueing..." : `Run GPT analysis on ${selectedRows.length} selected`}
         </button>
         <span className={styles.selectionHint}>
           {selectedRows.length
-            ? "GPT analysis will run only on the selected rows."
+            ? "GPT analysis will queue persistent background jobs for the selected rows."
             : "Select one or more rows to enable GPT analysis."}
         </span>
       </div>
@@ -938,7 +1086,7 @@ export function ScreenerTable({
 
       {analysis ? (
         <div className={styles.analysisWrap}>
-          <h2>GPT screener analysis</h2>
+          <h2>GPT screener analysis{modelUsed ? ` (${modelUsed})` : ""}</h2>
           <div className={styles.analysisTableWrap}>
             <table className={styles.analysisTable}>
               <thead>
@@ -983,6 +1131,45 @@ export function ScreenerTable({
       {renderSectionTable(techRows, "Tech stocks", "Thematic semiconductor, infrastructure, software, space, power, and quantum names.", "tech")}
       {renderSectionTable(defenseRows, "Defense contractors", "Defense primes, aerospace, military contractors, government software, and defense-sector ETFs.", "defense")}
       {renderSectionTable(leaderRows, "Market leaders and benchmarks", "Magnificent 7 names, sector ETFs, and broad market index proxies for context and relative analysis.", "leaders")}
+
+      {trayJobs.length ? (
+        <aside className={styles.statusTray} aria-live="polite">
+          <div className={styles.statusTrayHeader}>
+            <div>
+              <p className={styles.statusEyebrow}>GPT job tracker</p>
+              <h2>Screener analysis status</h2>
+            </div>
+            <span className={styles.statusCount}>
+              {pendingJobs.length ? `${pendingJobs.length} active` : `${trayJobs.length} recent`}
+            </span>
+          </div>
+
+          <div className={styles.statusList}>
+            {trayJobs.map((job) => (
+              <article
+                key={job.id}
+                className={`${styles.statusCard} ${selectedJobSet.has(job.symbol) ? styles.statusCardSelected : ""}`}
+              >
+                <div className={styles.statusCardTop}>
+                  <strong>{job.symbol}</strong>
+                  <span className={styles.statusPill}>{job.status}</span>
+                </div>
+                <p className={styles.statusMeta}>
+                  queued {formatJobTime(job.requestedAt)}
+                  {job.startedAt ? ` | started ${formatJobTime(job.startedAt)}` : ""}
+                  {job.completedAt ? ` | done ${formatJobTime(job.completedAt)}` : ""}
+                </p>
+                {job.result ? (
+                  <p className={styles.statusSummary}>
+                    {job.result.direction} | {job.result.optionsAction} | {job.result.optionsJudgment}
+                  </p>
+                ) : null}
+                {job.errorMessage ? <p className={styles.statusError}>{job.errorMessage}</p> : null}
+              </article>
+            ))}
+          </div>
+        </aside>
+      ) : null}
     </section>
   );
 }

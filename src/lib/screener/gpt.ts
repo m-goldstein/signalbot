@@ -1,5 +1,6 @@
 import { FeatureSnapshot } from "@/lib/features/types";
 import { getOpenAIConfig } from "@/lib/openai/config";
+import { ScreenerAnalysisEntry } from "@/lib/screener/types";
 import OpenAI from "openai";
 
 export type ScreenerGptResult = {
@@ -96,88 +97,106 @@ function sanitizeResult(symbol: string, value: unknown): ScreenerGptResult {
   };
 }
 
-export async function analyzeScreenerSnapshots(input: {
-  rows: { symbol: string; name: string; segment: string; tier: string }[];
-  snapshots: FeatureSnapshot[];
+export async function analyzeScreenerSnapshot(input: {
+  row: ScreenerAnalysisEntry;
+  snapshot: FeatureSnapshot | null;
 }) {
   const config = getOpenAIConfig();
   const client = new OpenAI({ apiKey: config.apiKey });
-  const snapshotMap = new Map(input.snapshots.map((snapshot) => [snapshot.symbol, snapshot]));
-  const results: ScreenerGptResult[] = [];
+  const { row, snapshot } = input;
 
-  for (const row of input.rows) {
-    const snapshot = snapshotMap.get(row.symbol);
-
-    if (!snapshot) {
-      results.push({
+  if (!snapshot) {
+    return {
+      model: config.model,
+      result: {
         symbol: row.symbol,
         direction: "UNKNOWN",
         confidence: 0,
         optionsAction: "NO_TRADE",
         optionsJudgment: "No screener snapshot was available for this symbol.",
         rationale: "No screener snapshot was available for this symbol.",
-      });
-      continue;
-    }
+      } satisfies ScreenerGptResult,
+    };
+  }
 
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      messages: [
-        {
-          role: "user",
-          content: buildPrompt({
-            symbol: row.symbol,
-            name: row.name,
-            segment: row.segment,
-            tier: row.tier,
-            snapshot,
-          }),
-        },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "screener_analysis",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              symbol: { type: "string" },
-              direction: {
-                type: "string",
-                enum: ["UP", "DOWN", "NEUTRAL", "UNKNOWN"],
-              },
-              confidence: { type: "number" },
-              optionsAction: {
-                type: "string",
-                enum: ["LONG_CALL", "CALL_SPREAD", "LONG_PUT", "PUT_SPREAD", "WATCHLIST", "NO_TRADE"],
-              },
-              optionsJudgment: { type: "string" },
-              rationale: { type: "string" },
+  const completion = await client.chat.completions.create({
+    model: config.model,
+    messages: [
+      {
+        role: "user",
+        content: buildPrompt({
+          symbol: row.symbol,
+          name: row.name,
+          segment: row.segment,
+          tier: row.tier,
+          snapshot,
+        }),
+      },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "screener_analysis",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            symbol: { type: "string" },
+            direction: {
+              type: "string",
+              enum: ["UP", "DOWN", "NEUTRAL", "UNKNOWN"],
             },
-            required: ["symbol", "direction", "confidence", "optionsAction", "optionsJudgment", "rationale"],
+            confidence: { type: "number" },
+            optionsAction: {
+              type: "string",
+              enum: ["LONG_CALL", "CALL_SPREAD", "LONG_PUT", "PUT_SPREAD", "WATCHLIST", "NO_TRADE"],
+            },
+            optionsJudgment: { type: "string" },
+            rationale: { type: "string" },
           },
+          required: ["symbol", "direction", "confidence", "optionsAction", "optionsJudgment", "rationale"],
         },
       },
-    });
+    },
+  });
 
-    const content = completion.choices[0]?.message?.content;
+  const content = completion.choices[0]?.message?.content;
+  let result = sanitizeResult(row.symbol, null);
 
-    if (!content) {
-      results.push(sanitizeResult(row.symbol, null));
-      continue;
-    }
-
+  if (content) {
     try {
-      results.push(sanitizeResult(row.symbol, JSON.parse(content)));
+      result = sanitizeResult(row.symbol, JSON.parse(content));
     } catch {
-      results.push(sanitizeResult(row.symbol, null));
+      result = sanitizeResult(row.symbol, null);
     }
   }
 
   return {
     model: config.model,
+    result,
+  };
+}
+
+export async function analyzeScreenerSnapshots(input: {
+  rows: ScreenerAnalysisEntry[];
+  snapshots: FeatureSnapshot[];
+}) {
+  const snapshotMap = new Map(input.snapshots.map((snapshot) => [snapshot.symbol, snapshot]));
+  const results: ScreenerGptResult[] = [];
+  let model = getOpenAIConfig().model;
+
+  for (const row of input.rows) {
+    const analysis = await analyzeScreenerSnapshot({
+      row,
+      snapshot: snapshotMap.get(row.symbol) ?? null,
+    });
+    model = analysis.model;
+    results.push(analysis.result);
+  }
+
+  return {
+    model,
     results,
   };
 }
