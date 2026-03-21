@@ -37,6 +37,7 @@ type OverlayPoint = {
 
 type ScreenerDetailChartProps = {
   symbol: string;
+  showCharts: boolean;
   bars: ChartPoint[];
   sma20: OverlayPoint[];
   sma50: OverlayPoint[];
@@ -312,6 +313,7 @@ function formatInsightStatus(status: ScreenerDetailChartProps["insights"][number
 
 export function ScreenerDetailChart({
   symbol,
+  showCharts,
   bars,
   sma20,
   sma50,
@@ -517,7 +519,7 @@ export function ScreenerDetailChart({
                     onClick={() => toggleWatchlist(contract, lane)}
                     aria-label={`${watched ? "Remove" : "Add"} ${contract.symbol} ${formatLane(lane)} contract ${watched ? "from" : "to"} watchlist`}
                   >
-                    {watched ? "★ Watchlist" : "☆ Watchlist"}
+                    {watched ? "★" : "☆"}
                   </button>
                 </div>
               </div>
@@ -547,44 +549,46 @@ export function ScreenerDetailChart({
 
   return (
     <section className={styles.shell}>
-      <div className={styles.header}>
-        <h3>{symbol} chart</h3>
-      </div>
+      {showCharts ? (
+        <>
+          <div className={styles.header}>
+            <h3>{symbol} chart</h3>
+          </div>
 
-      <div className={styles.detailMetrics}>
-        <article><span>Close</span><strong>{metrics.latestClose.toFixed(2)}</strong></article>
-        <article><span>Slice return</span><strong>{formatPercent(metrics.priceChangePercent)}</strong></article>
-        <article><span>Slice high</span><strong>{metrics.high.toFixed(2)}</strong></article>
-        <article><span>Slice low</span><strong>{metrics.low.toFixed(2)}</strong></article>
-        <article><span>ATR %</span><strong>{formatPercent(metrics.atrPercent)}</strong></article>
-        <article><span>Realized vol</span><strong>{formatPercent(metrics.realizedVol)}</strong></article>
-        <article><span>Avg dollar vol</span><strong>{formatMoney(metrics.avgDollarVolume)}</strong></article>
-        <article><span>Options bias</span><strong>{metrics.optionsBias}</strong></article>
-        <article><span>Structure</span><strong>{metrics.structure}</strong></article>
-        <article><span>Nearest fib</span><strong>{nearestFibLevel ? `${nearestFibLevel.label} (${formatPrice(nearestFibLevel.value)})` : "-"}</strong></article>
-        <article><span>Fib distance</span><strong>{nearestFibLevel ? formatPercent(fibDistancePercent) : "-"}</strong></article>
-        <article><span>Fib context</span><strong>{fibBias}</strong></article>
-      </div>
+          <div className={styles.detailMetrics}>
+            <article><span>Close</span><strong>{metrics.latestClose.toFixed(2)}</strong></article>
+            <article><span>Slice return</span><strong>{formatPercent(metrics.priceChangePercent)}</strong></article>
+            <article><span>Slice high</span><strong>{metrics.high.toFixed(2)}</strong></article>
+            <article><span>Slice low</span><strong>{metrics.low.toFixed(2)}</strong></article>
+            <article><span>ATR %</span><strong>{formatPercent(metrics.atrPercent)}</strong></article>
+            <article><span>Realized vol</span><strong>{formatPercent(metrics.realizedVol)}</strong></article>
+            <article><span>Avg dollar vol</span><strong>{formatMoney(metrics.avgDollarVolume)}</strong></article>
+            <article><span>Options bias</span><strong>{metrics.optionsBias}</strong></article>
+            <article><span>Structure</span><strong>{metrics.structure}</strong></article>
+            <article><span>Nearest fib</span><strong>{nearestFibLevel ? `${nearestFibLevel.label} (${formatPrice(nearestFibLevel.value)})` : "-"}</strong></article>
+            <article><span>Fib distance</span><strong>{nearestFibLevel ? formatPercent(fibDistancePercent) : "-"}</strong></article>
+            <article><span>Fib context</span><strong>{fibBias}</strong></article>
+          </div>
 
-      <div className={styles.legend}>
-        {overlays.close ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#111827" }} />close</span> : null}
-        {overlays.sma20 ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#2563eb" }} />sma20</span> : null}
-        {overlays.sma50 ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#7c3aed" }} />sma50</span> : null}
-        {overlays.sma200 ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#059669" }} />sma200</span> : null}
-        {overlays.range ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#b91c1c" }} />visible range</span> : null}
-        {overlays.expectedMove ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#9ca3af" }} />expected move</span> : null}
-        {overlays.fibonacci ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#d97706" }} />fibonacci</span> : null}
-      </div>
+          <div className={styles.legend}>
+            {overlays.close ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#111827" }} />close</span> : null}
+            {overlays.sma20 ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#2563eb" }} />sma20</span> : null}
+            {overlays.sma50 ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#7c3aed" }} />sma50</span> : null}
+            {overlays.sma200 ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#059669" }} />sma200</span> : null}
+            {overlays.range ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#b91c1c" }} />visible range</span> : null}
+            {overlays.expectedMove ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#9ca3af" }} />expected move</span> : null}
+            {overlays.fibonacci ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#d97706" }} />fibonacci</span> : null}
+          </div>
 
-      <p className={styles.analysis}>
-        Fibonacci analysis for the visible {scale === "ALL" ? "full-history" : scale.toLowerCase()} slice:
-        {" "}
-        {nearestFibLevel
-          ? `${symbol} is trading near the ${nearestFibLevel.label} retracement at ${formatPrice(nearestFibLevel.value)}. Current price is ${formatPercent(fibDistancePercent)} from that level, which reads as ${fibBias} within the visible range.`
-          : "the visible range is too narrow to produce usable retracement levels."}
-      </p>
+          <p className={styles.analysis}>
+            Fibonacci analysis for the visible {scale === "ALL" ? "full-history" : scale.toLowerCase()} slice:
+            {" "}
+            {nearestFibLevel
+              ? `${symbol} is trading near the ${nearestFibLevel.label} retracement at ${formatPrice(nearestFibLevel.value)}. Current price is ${formatPercent(fibDistancePercent)} from that level, which reads as ${fibBias} within the visible range.`
+              : "the visible range is too narrow to produce usable retracement levels."}
+          </p>
 
-      <div className={styles.controlPanel}>
+          <div className={styles.controlPanel}>
         <div className={styles.scaleTabs}>
           {TIME_SCALES.map((value) => (
             <button
@@ -754,6 +758,12 @@ export function ScreenerDetailChart({
           </text>
         </svg>
       ) : null}
+        </>
+      ) : (
+        <div className={styles.graphHidden}>
+          Graphs are hidden for this entry. Enable them from the row toggle or the global screener control.
+        </div>
+      )}
 
       <section className={styles.contractSection}>
         <div className={styles.insightHeader}>

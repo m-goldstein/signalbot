@@ -45,6 +45,17 @@
   gap: 8px;
 }
 
+.inlineCheckbox {
+  justify-content: center;
+}
+
+.inlineCheckbox input {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  align-self: flex-start;
+}
+
 .filters span {
   color: var(--muted);
   font-size: 15px;
@@ -186,6 +197,21 @@
   justify-content: space-between;
   gap: 12px;
   align-items: baseline;
+}
+
+.detailHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.detailToggleButton {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  font: inherit;
 }
 
 .detailMeta {

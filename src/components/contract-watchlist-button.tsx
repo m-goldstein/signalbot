@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "./contract-watchlist-button.module.css";
 import {
   CONTRACT_WATCHLIST_EVENT,
+  ContractWatchlistEntry,
   readContractWatchlist,
   removeContractFromWatchlist,
 } from "@/lib/watchlist/contracts";
@@ -18,7 +19,7 @@ function formatStructure(value: string) {
 
 export function ContractWatchlistButton() {
   const [isOpen, setIsOpen] = useState(false);
-  const [entries, setEntries] = useState(readContractWatchlist);
+  const [entries, setEntries] = useState<ContractWatchlistEntry[]>(() => []);
 
   useEffect(() => {
     function refresh() {

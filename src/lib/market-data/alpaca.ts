@@ -51,6 +51,56 @@ type AlpacaOptionSnapshotsResponse = {
   next_page_token?: string | null;
   message?: string;
 };
+const REQUEST_TIMEOUT_MS = 12000;
+const MAX_FETCH_ATTEMPTS = 3;
+
+function sleep(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function fetchWithRetry<T>(input: URL, init: RequestInit, parse: (response: Response) => Promise<T>) {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.status === 429 || response.status >= 500) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        lastError = new Error(payload.message || `Upstream request failed with status ${response.status}.`);
+
+        if (attempt < MAX_FETCH_ATTEMPTS) {
+          await sleep(300 * attempt);
+          continue;
+        }
+
+        throw lastError;
+      }
+
+      return await parse(response);
+    } catch (error) {
+      clearTimeout(timeoutId);
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error("Unexpected upstream request error.");
+
+      if (attempt < MAX_FETCH_ATTEMPTS) {
+        await sleep(300 * attempt);
+        continue;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("Upstream request failed.");
+}
 
 function normalizeBars(bars: AlpacaBar[]): PriceBar[] {
   return bars.map((bar) => ({
@@ -165,20 +215,26 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
       url.searchParams.set("end", query.end);
     }
 
-    const response = await fetch(url, {
-      headers: {
-        accept: "application/json",
-        "APCA-API-KEY-ID": config.apiKey,
-        "APCA-API-SECRET-KEY": config.apiSecret,
+    const payload = await fetchWithRetry(
+      url,
+      {
+        headers: {
+          accept: "application/json",
+          "APCA-API-KEY-ID": config.apiKey,
+          "APCA-API-SECRET-KEY": config.apiSecret,
+        },
+        cache: "no-store",
       },
-      cache: "no-store",
-    });
+      async (response) => {
+        const body = (await response.json()) as AlpacaBarsResponse;
 
-    const payload = (await response.json()) as AlpacaBarsResponse;
+        if (!response.ok) {
+          throw new Error(body.message || "Failed to fetch bars from Alpaca.");
+        }
 
-    if (!response.ok) {
-      throw new Error(payload.message || "Failed to fetch bars from Alpaca.");
-    }
+        return body;
+      },
+    );
 
     return {
       symbol: query.symbol.toUpperCase(),
@@ -212,20 +268,26 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
         url.searchParams.set("page_token", pageToken);
       }
 
-      const response = await fetch(url, {
-        headers: {
-          accept: "application/json",
-          "APCA-API-KEY-ID": config.apiKey,
-          "APCA-API-SECRET-KEY": config.apiSecret,
+      const payload = await fetchWithRetry(
+        url,
+        {
+          headers: {
+            accept: "application/json",
+            "APCA-API-KEY-ID": config.apiKey,
+            "APCA-API-SECRET-KEY": config.apiSecret,
+          },
+          cache: "no-store",
         },
-        cache: "no-store",
-      });
+        async (response) => {
+          const body = (await response.json()) as AlpacaOptionSnapshotsResponse;
 
-      const payload = (await response.json()) as AlpacaOptionSnapshotsResponse;
+          if (!response.ok) {
+            throw new Error(body.message || "Failed to fetch option snapshots from Alpaca.");
+          }
 
-      if (!response.ok) {
-        throw new Error(payload.message || "Failed to fetch option snapshots from Alpaca.");
-      }
+          return body;
+        },
+      );
 
       snapshots.push(...normalizeOptionSnapshots(underlyingSymbol, payload.snapshots ?? {}));
 

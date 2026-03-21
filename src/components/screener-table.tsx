@@ -222,6 +222,8 @@ export function ScreenerTable({
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [historyStart, setHistoryStart] = useState<string>("");
   const [historyStartInput, setHistoryStartInput] = useState<string>(initialHistoryStartInput);
+  const [showGraphs, setShowGraphs] = useState(true);
+  const [rowGraphVisibility, setRowGraphVisibility] = useState<Record<string, boolean>>({});
   const [analysis, setAnalysis] = useState<ScreenerGptResponse | null>(null);
   const [expandedRowKey, setExpandedRowKey] = useState<string>("");
   const [detail, setDetail] = useState<{
@@ -506,6 +508,13 @@ export function ScreenerTable({
     setDirection(field === "symbol" ? "asc" : "desc");
   }
 
+  function toggleRowGraph(rowKey: string) {
+    setRowGraphVisibility((current) => ({
+      ...current,
+      [rowKey]: current[rowKey] === false ? true : false,
+    }));
+  }
+
   const allRowsSelected = rows.length > 0 && selectedRows.length === rows.length;
   const techRows = rows.filter((row) => row.section === "tech");
   const leaderRows = rows.filter((row) => row.section === "leaders");
@@ -656,6 +665,7 @@ export function ScreenerTable({
                     const rowKey = `${sectionKey}:${row.symbol}:${row.timeframe}`;
                     const isExpanded = expandedRowKey === rowKey;
                     const detailMatches = detail?.symbol === row.symbol;
+                    const shouldShowGraphs = showGraphs && rowGraphVisibility[rowKey] !== false;
 
                     return (
                       <Fragment key={rowKey}>
@@ -756,18 +766,31 @@ export function ScreenerTable({
                               <div className={styles.inlineDetail}>
                                 <div className={styles.detailHeader}>
                                   <h2>{row.symbol} detail</h2>
-                                  <span>
-                                    {isLoadingDetail
-                                      ? "Loading chart..."
-                                      : detailMatches && detail
-                                        ? `${detail.name} / ${detail.segment}`
-                                        : ""}
-                                  </span>
+                                  <div className={styles.detailHeaderActions}>
+                                    <span>
+                                      {isLoadingDetail
+                                        ? "Loading chart..."
+                                        : detailMatches && detail
+                                          ? `${detail.name} / ${detail.segment}`
+                                          : ""}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className={styles.detailToggleButton}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        toggleRowGraph(rowKey);
+                                      }}
+                                    >
+                                      {shouldShowGraphs ? "Hide graph" : "Show graph"}
+                                    </button>
+                                  </div>
                                 </div>
 
                                 {detailMatches && detail ? (
                                   <ScreenerDetailChart
                                     symbol={detail.symbol}
+                                    showCharts={shouldShowGraphs}
                                     bars={detail.series.bars}
                                     sma20={detail.series.sma20}
                                     sma50={detail.series.sma50}
@@ -848,6 +871,15 @@ export function ScreenerTable({
             type="date"
             min="2016-01-01"
             max={maxHistoryStartInput}
+          />
+        </label>
+
+        <label className={styles.inlineCheckbox}>
+          <span>Show graphs</span>
+          <input
+            type="checkbox"
+            checked={showGraphs}
+            onChange={(event) => setShowGraphs(event.target.checked)}
           />
         </label>
       </div>
