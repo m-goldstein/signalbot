@@ -2,6 +2,7 @@
 
 import { OpenInsiderGptResponse } from "@/lib/openinsider/types";
 import { ScreenerGptResponse } from "@/lib/screener/types";
+import { WatchlistContractGptResponse } from "@/lib/watchlist/types";
 import { getActiveTradingDayKey } from "@/lib/client/market-session";
 
 type CacheEnvelope<T> = {
@@ -108,6 +109,14 @@ function isInsiderSignal(value: string) {
 
 function isQuality(value: string) {
   return value === "HIGH" || value === "MEDIUM" || value === "LOW";
+}
+
+function isWatchlistDecision(value: string) {
+  return value === "PURSUE" || value === "MONITOR" || value === "AVOID";
+}
+
+function isWatchlistBias(value: string) {
+  return value === "BULLISH" || value === "BEARISH" || value === "NEUTRAL" || value === "MIXED";
 }
 
 export function sanitizeScreenerGptResponse(value: unknown): ScreenerGptResponse | null {
@@ -218,6 +227,102 @@ export function sanitizeOpenInsiderGptResponse(value: unknown): OpenInsiderGptRe
   };
 }
 
+export function sanitizeWatchlistContractGptResponse(value: unknown): WatchlistContractGptResponse | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as { model?: unknown; analyzedCount?: unknown; results?: unknown };
+
+  if (!Array.isArray(candidate.results)) {
+    return null;
+  }
+
+  const results = candidate.results
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+
+      const item = entry as Record<string, unknown>;
+      const contractSymbol = sanitizeText(item.contractSymbol, 48).toUpperCase();
+      const underlyingSymbol = sanitizeText(item.underlyingSymbol, 16).toUpperCase();
+      const pursueDecision = sanitizeText(item.pursueDecision, 16).toUpperCase();
+      const shortTermBias = sanitizeText(item.shortTermBias, 16).toUpperCase();
+      const longTermBias = sanitizeText(item.longTermBias, 16).toUpperCase();
+      const confidence = sanitizeNumber(item.confidence, 0, 1);
+
+      if (
+        !contractSymbol ||
+        !underlyingSymbol ||
+        !isWatchlistDecision(pursueDecision) ||
+        !isWatchlistBias(shortTermBias) ||
+        !isWatchlistBias(longTermBias) ||
+        confidence === null
+      ) {
+        return null;
+      }
+
+      const sanitizeHeadlines = (value: unknown) =>
+        Array.isArray(value)
+          ? value
+              .map((headline) => {
+                if (!headline || typeof headline !== "object") {
+                  return null;
+                }
+
+                const candidateHeadline = headline as Record<string, unknown>;
+                const title = sanitizeText(candidateHeadline.title, 240);
+
+                if (!title) {
+                  return null;
+                }
+
+                return {
+                  title,
+                  source: sanitizeText(candidateHeadline.source, 120) || "Unknown",
+                  publishedAt: sanitizeText(candidateHeadline.publishedAt, 120),
+                  url: sanitizeText(candidateHeadline.url, 600),
+                };
+              })
+              .filter(Boolean)
+              .slice(0, 6)
+          : [];
+
+      return {
+        contractSymbol,
+        underlyingSymbol,
+        pursueDecision,
+        shortTermBias,
+        longTermBias,
+        confidence,
+        contractJudgment: sanitizeText(item.contractJudgment, 600),
+        thesisSummary: sanitizeText(item.thesisSummary, 2400),
+        positiveCatalysts: sanitizeStringArray(item.positiveCatalysts),
+        negativeCatalysts: sanitizeStringArray(item.negativeCatalysts),
+        insiderTake: sanitizeText(item.insiderTake, 1200),
+        geopoliticalTake: sanitizeText(item.geopoliticalTake, 1200),
+        actionPlan: sanitizeText(item.actionPlan, 1400),
+        rationale: sanitizeText(item.rationale, 2400),
+        companyHeadlines: sanitizeHeadlines(item.companyHeadlines),
+        marketHeadlines: sanitizeHeadlines(item.marketHeadlines),
+      } as WatchlistContractGptResponse["results"][number];
+    })
+    .filter((entry): entry is WatchlistContractGptResponse["results"][number] => Boolean(entry));
+
+  if (!results.length) {
+    return null;
+  }
+
+  const analyzedCount = sanitizeNumber(candidate.analyzedCount, 1, 100);
+
+  return {
+    model: sanitizeText(candidate.model, 120) || "unknown",
+    analyzedCount: analyzedCount ?? results.length,
+    results,
+  };
+}
+
 export function readCachedScreenerAnalysis(storageKey: string, queryKey: string) {
   const envelope = readEnvelope<ScreenerGptResponse>(storageKey);
 
@@ -250,6 +355,30 @@ export function readCachedOpenInsiderAnalysis(storageKey: string, queryKey: stri
 
 export function writeCachedOpenInsiderAnalysis(storageKey: string, queryKey: string, payload: OpenInsiderGptResponse) {
   const sanitized = sanitizeOpenInsiderGptResponse(payload);
+
+  if (!sanitized) {
+    return;
+  }
+
+  writeEnvelope(storageKey, queryKey, sanitized);
+}
+
+export function readCachedWatchlistContractAnalysis(storageKey: string, queryKey: string) {
+  const envelope = readEnvelope<WatchlistContractGptResponse>(storageKey);
+
+  if (!envelope || envelope.dayKey !== getActiveTradingDayKey() || envelope.queryKey !== queryKey) {
+    return null;
+  }
+
+  return sanitizeWatchlistContractGptResponse(envelope.payload);
+}
+
+export function writeCachedWatchlistContractAnalysis(
+  storageKey: string,
+  queryKey: string,
+  payload: WatchlistContractGptResponse,
+) {
+  const sanitized = sanitizeWatchlistContractGptResponse(payload);
 
   if (!sanitized) {
     return;

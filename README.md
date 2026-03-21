@@ -71,6 +71,13 @@ Optional:
   - defaults to `https://data.alpaca.markets`
 - `OPENAI_MODEL`
   - defaults to `gpt-5-mini`
+- `DATABASE_PROVIDER`
+  - `sqlite` locally by default
+  - set to `postgres` on Vercel when using a free hosted Postgres provider such as Neon
+- `SQLITE_PATH`
+  - defaults to `./data/wolfdesk.db`
+- `DATABASE_URL`
+  - required when `DATABASE_PROVIDER=postgres`
 
 Legacy Alpaca variable names are also accepted:
 
@@ -90,6 +97,15 @@ Install and run:
 ```bash
 npm install
 npm run dev
+```
+
+Local development uses SQLite automatically unless you explicitly set `DATABASE_PROVIDER=postgres`.
+
+For Vercel deployment, do not use SQLite. Use a free hosted Postgres database and set:
+
+```text
+DATABASE_PROVIDER=postgres
+DATABASE_URL=...
 ```
 
 Then open:
@@ -198,6 +214,29 @@ GPT screener analysis only runs on explicitly selected rows.
 - the button is disabled until at least one row is selected
 - analysis is cached in browser local storage for the current trading day
 - cached results are restored when the current screener query and selection match
+
+## Watchlist usage
+
+The watchlist is available at `/watchlist` from the top navbar.
+
+It supports:
+
+- saved contract review
+- per-row `Analyze` actions
+- batch `Analyze watchlist`
+- asynchronous persisted GPT job execution
+- queued / running / completed / failed job states
+- page revisit and polling-based result restoration
+
+Watchlist contract analysis may take a few minutes because it assembles:
+
+- current screener detail context
+- contract details
+- recent company news
+- market and sector context
+- recent public insider activity when available
+
+The watchlist analysis data is now stored server-side in the configured database, not just in browser storage.
 
 ### Timed refresh
 

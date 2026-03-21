@@ -17,10 +17,10 @@ import {
 } from "@/lib/chart/engine";
 import {
   CONTRACT_WATCHLIST_EVENT,
-  ContractWatchlistEntry,
   isContractWatched,
   toggleContractWatchlist,
 } from "@/lib/watchlist/contracts";
+import { ContractWatchlistEntry } from "@/lib/watchlist/types";
 
 type ChartPoint = {
   timestamp: string;

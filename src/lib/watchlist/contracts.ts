@@ -1,24 +1,6 @@
 "use client";
 
-export type ContractWatchlistEntry = {
-  symbol: string;
-  underlyingSymbol: string;
-  optionType: "call" | "put";
-  expirationDate: string;
-  daysToExpiration: number;
-  strikePrice: number;
-  bid: number;
-  ask: number;
-  mark: number;
-  breakEven: number;
-  dailyVolume: number;
-  bidAskSpreadPercent: number;
-  score: number;
-  thesisFit: "aligned" | "countertrend" | "watch";
-  structure: "long_call" | "call_spread" | "long_put" | "put_spread" | "watchlist";
-  lane: "suggested" | "fast_lane";
-  addedAt: string;
-};
+import { ContractWatchlistEntry } from "@/lib/watchlist/types";
 
 const STORAGE_KEY = "wolfdesk.contract-watchlist";
 export const CONTRACT_WATCHLIST_EVENT = "wolfdesk-contract-watchlist";
