@@ -71,6 +71,90 @@ function formatSection(value: "tech" | "leaders") {
   return value === "tech" ? "Tech stocks" : "Market leaders and benchmarks";
 }
 
+type SectionKey = "selected" | "tech" | "leaders";
+
+function compareNumber(left: number, operator: string, right: number) {
+  if (operator === "<") {
+    return left < right;
+  }
+
+  if (operator === "<=") {
+    return left <= right;
+  }
+
+  if (operator === ">") {
+    return left > right;
+  }
+
+  if (operator === ">=") {
+    return left >= right;
+  }
+
+  return left === right;
+}
+
+function normalizeSearchQuery(rawQuery: string) {
+  return rawQuery
+    .split(",")
+    .map((token) => token.trim().toLowerCase().replace(/\s+/g, ""))
+    .filter(Boolean);
+}
+
+function matchesSearch(row: ScreenerRow, rawQuery: string) {
+  const tokens = normalizeSearchQuery(rawQuery);
+
+  if (!tokens.length) {
+    return true;
+  }
+  const searchableText = [
+    row.symbol,
+    row.name,
+    row.section,
+    formatSection(row.section),
+    row.segment,
+    formatSegment(row.segment),
+  ]
+    .join(" ")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+
+  return tokens.every((token) => {
+    const dorkMatch = token.match(/^([a-z0-9]+)(<=|>=|=|<|>)([0-9.]+)$/i);
+
+    if (!dorkMatch) {
+      return searchableText.includes(token);
+    }
+
+    const [, field, operator, rawValue] = dorkMatch;
+    const targetValue = Number.parseFloat(rawValue);
+
+    if (!Number.isFinite(targetValue)) {
+      return false;
+    }
+
+    const fieldMap: Partial<Record<string, number>> = {
+      price: row.close,
+      atr: row.atrPercent,
+      adv20: row.averageDollarVolume20,
+      conv: row.directionalConvictionScore,
+      premium: row.premiumBuyingScore,
+      day: row.dailyChangePercent,
+      "1m": row.oneMonthChangePercent,
+      "3m": row.threeMonthChangePercent,
+      "6m": row.sixMonthChangePercent,
+      "1y": row.oneYearChangePercent,
+    };
+
+    const leftValue = fieldMap[field];
+
+    if (typeof leftValue !== "number") {
+      return false;
+    }
+
+    return compareNumber(leftValue, operator, targetValue);
+  });
+}
+
 export function ScreenerTable() {
   const [tier, setTier] = useState<UniverseTier | "all">("all");
   const [sort, setSort] = useState<ScreenerSortField>("dailyChangePercent");
@@ -94,6 +178,11 @@ export function ScreenerTable() {
     };
   } | null>(null);
   const [topN, setTopN] = useState("5");
+  const [tableQueries, setTableQueries] = useState<Record<SectionKey, string>>({
+    selected: "",
+    tech: "",
+    leaders: "",
+  });
   const [error, setError] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -130,6 +219,7 @@ export function ScreenerTable() {
           setDetail(null);
           setSelectedSymbol("");
           setSelectedRows([]);
+          setTableQueries({ selected: "", tech: "", leaders: "" });
         }
       } catch {
         if (isActive) {
@@ -230,6 +320,8 @@ export function ScreenerTable() {
   const allRowsSelected = rows.length > 0 && selectedRows.length === rows.length;
   const techRows = rows.filter((row) => row.section === "tech");
   const leaderRows = rows.filter((row) => row.section === "leaders");
+  const selectedRowSet = new Set(selectedRows);
+  const selectedRowsData = rows.filter((row) => selectedRowSet.has(row.symbol));
 
   function toggleSectionRows(sectionRows: ScreenerRow[]) {
     const symbols = sectionRows.map((row) => row.symbol);
@@ -242,9 +334,15 @@ export function ScreenerTable() {
     );
   }
 
-  function renderSectionTable(sectionRows: ScreenerRow[], title: string, copy: string) {
+  function renderSectionTable(
+    sectionRows: ScreenerRow[],
+    title: string,
+    copy: string,
+    sectionKey: SectionKey,
+  ) {
+    const filteredRows = sectionRows.filter((row) => matchesSearch(row, tableQueries[sectionKey]));
     const sectionSelected =
-      sectionRows.length > 0 && sectionRows.every((row) => selectedRows.includes(row.symbol));
+      filteredRows.length > 0 && filteredRows.every((row) => selectedRows.includes(row.symbol));
 
     return (
       <section className={styles.sectionBlock}>
@@ -252,6 +350,80 @@ export function ScreenerTable() {
           <div>
             <h2>{title}</h2>
             <p>{copy}</p>
+          </div>
+          <div className={styles.sectionTools}>
+            <label className={styles.searchWrap}>
+              <input
+                value={tableQueries[sectionKey]}
+                onChange={(event) =>
+                  setTableQueries((current) => ({
+                    ...current,
+                    [sectionKey]: event.target.value,
+                  }))
+                }
+                placeholder="symbol, section, price<100, atr<4"
+              />
+            </label>
+            <span className={styles.helpWrap}>
+              <button type="button" className={styles.helpButton} aria-label={`Search help for ${title}`}>
+                ?
+              </button>
+              <span className={styles.helpBox}>
+                Search syntax
+                {"\n"}
+                Enter a comma-separated list of tokens.
+                {"\n"}
+                Whitespace is normalized automatically.
+                {"\n"}
+                All tokens are combined with AND logic.
+                {"\n"}
+                {"\n"}
+                Token types
+                {"\n"}
+                1. Plain text token
+                {"\n"}
+                Matches against symbol, company name, section, and segment text.
+                {"\n"}
+                {"\n"}
+                2. Numeric dork
+                {"\n"}
+                Format: `field operator value`
+                {"\n"}
+                Supported operators: `&lt;`, `&lt;=`, `=`, `&gt;=`, `&gt;`
+                {"\n"}
+                Spaces around the operator are allowed.
+                {"\n"}
+                {"\n"}
+                Supported numeric fields
+                {"\n"}
+                `price` = close price
+                {"\n"}
+                `atr` = ATR percent
+                {"\n"}
+                `adv20` = 20-day average dollar volume
+                {"\n"}
+                `conv` = options conviction score
+                {"\n"}
+                `premium` = premium buying score
+                {"\n"}
+                `day` = daily percent change
+                {"\n"}
+                `1m` = one month percent change
+                {"\n"}
+                `3m` = three month percent change
+                {"\n"}
+                `6m` = six month percent change
+                {"\n"}
+                `1y` = one year percent change
+                {"\n"}
+                {"\n"}
+                Composition
+                {"\n"}
+                Mix plain text and dorks in the same query.
+                {"\n"}
+                Repeat the same field multiple times to create a range filter.
+              </span>
+            </span>
           </div>
         </div>
 
@@ -264,7 +436,7 @@ export function ScreenerTable() {
                     type="checkbox"
                     checked={sectionSelected}
                     aria-label={`Select all ${title}`}
-                    onChange={() => toggleSectionRows(sectionRows)}
+                    onChange={() => toggleSectionRows(filteredRows)}
                   />
                 </th>
                 {TABLE_SORT_FIELDS.map((column) => {
@@ -288,8 +460,8 @@ export function ScreenerTable() {
               </tr>
             </thead>
             <tbody>
-              {sectionRows.length ? (
-                sectionRows.map((row) => (
+              {filteredRows.length ? (
+                filteredRows.map((row) => (
                   <tr
                     key={`${row.section}-${row.symbol}-${row.timeframe}`}
                     className={selectedSymbol === row.symbol ? styles.activeRow : styles.clickableRow}
@@ -385,7 +557,7 @@ export function ScreenerTable() {
               ) : (
                 <tr>
                   <td colSpan={10} className={styles.empty}>
-                    {isLoading ? "Loading screener..." : "No rows returned."}
+                    {isLoading ? "Loading screener..." : "No rows matched the current search."}
                   </td>
                 </tr>
               )}
@@ -480,6 +652,15 @@ export function ScreenerTable() {
         </article>
       </div>
 
+      {selectedRowsData.length ? (
+        renderSectionTable(
+          selectedRowsData,
+          "Selected rows",
+          "Focused working set duplicated here for faster navigation and GPT review.",
+          "selected",
+        )
+      ) : null}
+
       {analysis ? (
         <div className={styles.analysisWrap}>
           <h2>GPT screener analysis</h2>
@@ -545,8 +726,8 @@ export function ScreenerTable() {
         </label>
       </div>
 
-      {renderSectionTable(techRows, "Tech stocks", "Thematic semiconductor, infrastructure, software, space, power, and quantum names.")}
-      {renderSectionTable(leaderRows, "Market leaders and benchmarks", "Magnificent 7 names, sector ETFs, and broad market index proxies for context and relative analysis.")}
+      {renderSectionTable(techRows, "Tech stocks", "Thematic semiconductor, infrastructure, software, space, power, and quantum names.", "tech")}
+      {renderSectionTable(leaderRows, "Market leaders and benchmarks", "Magnificent 7 names, sector ETFs, and broad market index proxies for context and relative analysis.", "leaders")}
     </section>
   );
 }

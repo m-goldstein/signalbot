@@ -111,6 +111,56 @@
   gap: 12px;
 }
 
+.sectionTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.searchWrap input {
+  width: 320px;
+  min-height: 36px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.helpWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.helpButton {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  font: inherit;
+}
+
+.helpBox {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 2;
+  display: none;
+  min-width: 320px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-line;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.helpWrap:hover .helpBox,
+.helpWrap:focus-within .helpBox {
+  display: block;
+}
+
 .sectionHeader h2 {
   margin: 0;
   font-size: 18px;
@@ -395,6 +445,23 @@
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: start;
+  }
+
+  .sectionHeader {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .sectionTools {
+    width: 100%;
+  }
+
+  .searchWrap {
+    flex: 1;
+  }
+
+  .searchWrap input {
+    width: 100%;
   }
 }
 
