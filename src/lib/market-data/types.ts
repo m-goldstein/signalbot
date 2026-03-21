@@ -19,6 +19,14 @@ export type BarsQuery = {
   end?: string;
 };
 
+export type BarsBatchQuery = {
+  symbols: string[];
+  timeframe: Timeframe;
+  limit: number;
+  start?: string;
+  end?: string;
+};
+
 export type BarsResult = {
   symbol: string;
   timeframe: Timeframe;
@@ -63,5 +71,6 @@ export type OptionSnapshotsResult = {
 
 export interface MarketDataProvider {
   getBars(query: BarsQuery): Promise<BarsResult>;
+  getBarsBatch?(query: BarsBatchQuery): Promise<BarsResult[]>;
   getOptionSnapshots(query: OptionSnapshotsQuery): Promise<OptionSnapshotsResult>;
 }

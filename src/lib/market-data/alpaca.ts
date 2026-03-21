@@ -1,4 +1,5 @@
 import {
+  BarsBatchQuery,
   BarsQuery,
   BarsResult,
   MarketDataProvider,
@@ -24,6 +25,12 @@ type AlpacaBar = {
 type AlpacaBarsResponse = {
   bars?: AlpacaBar[];
   symbol?: string;
+  next_page_token?: string | null;
+  message?: string;
+};
+
+type AlpacaMultiBarsResponse = {
+  bars?: Record<string, AlpacaBar[]>;
   next_page_token?: string | null;
   message?: string;
 };
@@ -113,6 +120,14 @@ function normalizeBars(bars: AlpacaBar[]): PriceBar[] {
     tradeCount: bar.n,
     vwap: bar.vw,
   }));
+}
+
+function getAuthHeaders(config: ReturnType<typeof getAlpacaConfig>) {
+  return {
+    accept: "application/json",
+    "APCA-API-KEY-ID": config.apiKey,
+    "APCA-API-SECRET-KEY": config.apiSecret,
+  };
 }
 
 function parseOptionContractSymbol(contractSymbol: string): {
@@ -218,11 +233,7 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
     const payload = await fetchWithRetry(
       url,
       {
-        headers: {
-          accept: "application/json",
-          "APCA-API-KEY-ID": config.apiKey,
-          "APCA-API-SECRET-KEY": config.apiSecret,
-        },
+        headers: getAuthHeaders(config),
         cache: "no-store",
       },
       async (response) => {
@@ -242,6 +253,86 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
       bars: normalizeBars(payload.bars ?? []),
       source: "alpaca",
     };
+  }
+
+  async getBarsBatch(query: BarsBatchQuery): Promise<BarsResult[]> {
+    if (!hasAlpacaCredentials()) {
+      throw new Error("Alpaca credentials are not configured.");
+    }
+
+    const config = getAlpacaConfig();
+    const symbols = [...new Set(query.symbols.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))];
+
+    if (!symbols.length) {
+      return [];
+    }
+
+    const barsBySymbol = new Map<string, AlpacaBar[]>();
+
+    for (const symbol of symbols) {
+      barsBySymbol.set(symbol, []);
+    }
+
+    let pageToken: string | null = null;
+
+    while (true) {
+      const url = new URL("/v2/stocks/bars", config.dataBaseUrl);
+      url.searchParams.set("symbols", symbols.join(","));
+      url.searchParams.set("timeframe", query.timeframe);
+      url.searchParams.set("limit", String(query.limit * symbols.length));
+
+      if (query.start) {
+        url.searchParams.set("start", query.start);
+      }
+
+      if (query.end) {
+        url.searchParams.set("end", query.end);
+      }
+
+      if (pageToken) {
+        url.searchParams.set("page_token", pageToken);
+      }
+
+      const payload = await fetchWithRetry(
+        url,
+        {
+          headers: getAuthHeaders(config),
+          cache: "no-store",
+        },
+        async (response) => {
+          const body = (await response.json()) as AlpacaMultiBarsResponse;
+
+          if (!response.ok) {
+            throw new Error(body.message || "Failed to fetch batched bars from Alpaca.");
+          }
+
+          return body;
+        },
+      );
+
+      for (const symbol of symbols) {
+        const symbolBars = payload.bars?.[symbol] ?? [];
+
+        if (!symbolBars.length) {
+          continue;
+        }
+
+        barsBySymbol.get(symbol)?.push(...symbolBars);
+      }
+
+      if (!payload.next_page_token) {
+        break;
+      }
+
+      pageToken = payload.next_page_token;
+    }
+
+    return symbols.map((symbol) => ({
+      symbol,
+      timeframe: query.timeframe,
+      bars: normalizeBars(barsBySymbol.get(symbol) ?? []),
+      source: "alpaca",
+    }));
   }
 
   async getOptionSnapshots(query: OptionSnapshotsQuery): Promise<OptionSnapshotsResult> {
@@ -271,11 +362,7 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
       const payload = await fetchWithRetry(
         url,
         {
-          headers: {
-            accept: "application/json",
-            "APCA-API-KEY-ID": config.apiKey,
-            "APCA-API-SECRET-KEY": config.apiSecret,
-          },
+          headers: getAuthHeaders(config),
           cache: "no-store",
         },
         async (response) => {
