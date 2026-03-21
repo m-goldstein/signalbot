@@ -13,9 +13,6 @@ type PostgresClient = {
   unsafe: (query: string, params?: readonly unknown[]) => Promise<unknown>;
 };
 
-const loadRuntimeModule = (moduleName: string) =>
-  (0, eval)("require")(moduleName) as unknown;
-
 type DatabaseClients = {
   provider: "sqlite" | "postgres";
   sqlite?: SqliteClient;
@@ -23,29 +20,26 @@ type DatabaseClients = {
 };
 
 let clients: DatabaseClients | null = null;
+let clientsPromise: Promise<DatabaseClients> | null = null;
 let initialized = false;
 
-function createSqliteClient() {
-  const BetterSqlite3 = loadRuntimeModule("better-sqlite3") as new (filename: string) => SqliteClient;
+async function createSqliteClient() {
+  const module = (await import("better-sqlite3")) as {
+    default: new (filename: string) => SqliteClient;
+  };
+  const BetterSqlite3 = module.default;
   const sqlitePath = getSqlitePath();
   const absolutePath = path.isAbsolute(sqlitePath) ? sqlitePath : path.join(process.cwd(), sqlitePath);
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
   return new BetterSqlite3(absolutePath);
 }
 
-function createPostgresClient() {
-  const postgres = (
-    loadRuntimeModule("postgres") as
-      | { default?: (url: string, options: object) => PostgresClient }
-      | ((url: string, options: object) => PostgresClient)
-  );
-  const factory = typeof postgres === "function" ? postgres : postgres.default;
+async function createPostgresClient() {
+  const module = (await import("postgres")) as {
+    default: (url: string, options: object) => PostgresClient;
+  };
 
-  if (!factory) {
-    throw new Error("Unable to load postgres client.");
-  }
-
-  return factory(getDatabaseUrl(), {
+  return module.default(getDatabaseUrl(), {
     max: 1,
     prepare: false,
     idle_timeout: 20,
@@ -53,19 +47,27 @@ function createPostgresClient() {
   });
 }
 
-function getClients(): DatabaseClients {
+async function getClients(): Promise<DatabaseClients> {
   if (clients) {
     return clients;
   }
 
-  const provider = getDatabaseProvider();
+  if (clientsPromise) {
+    return clientsPromise;
+  }
 
-  clients =
-    provider === "postgres"
-      ? { provider, pg: createPostgresClient() }
-      : { provider, sqlite: createSqliteClient() };
+  clientsPromise = (async () => {
+    const provider = getDatabaseProvider();
+    const resolved =
+      provider === "postgres"
+        ? { provider, pg: await createPostgresClient() }
+        : { provider, sqlite: await createSqliteClient() };
 
-  return clients;
+    clients = resolved;
+    return resolved;
+  })();
+
+  return clientsPromise;
 }
 
 async function initializeSqlite(sqlite: SqliteClient) {
@@ -120,10 +122,10 @@ async function initializePostgres(pg: PostgresClient) {
 
 export async function ensureDatabase() {
   if (initialized) {
-    return getClients();
+    return await getClients();
   }
 
-  const current = getClients();
+  const current = await getClients();
 
   if (current.provider === "postgres" && current.pg) {
     await initializePostgres(current.pg);
