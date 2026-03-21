@@ -1,5 +1,5 @@
 export type UniverseTier = "tier1" | "tier2" | "tier3";
-export type UniverseSection = "tech" | "leaders";
+export type UniverseSection = "tech" | "leaders" | "defense";
 
 export type UniverseSegment =
   | "fabless"

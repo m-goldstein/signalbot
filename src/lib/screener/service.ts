@@ -6,13 +6,21 @@ import { getUniverse, getUniverseByTier } from "@/lib/universe/service";
 import { UniverseTier } from "@/lib/universe/types";
 
 const CONCURRENCY = 4;
-const LOOKBACK_DAYS = 540;
+const DEFAULT_LOOKBACK_DAYS = 730;
 const BAR_LIMIT = 1000;
 
-function getHistoryStart() {
+export function getDefaultHistoryStart() {
   const date = new Date();
-  date.setUTCDate(date.getUTCDate() - LOOKBACK_DAYS);
+  date.setUTCDate(date.getUTCDate() - DEFAULT_LOOKBACK_DAYS);
   return date.toISOString();
+}
+
+export function getDefaultHistoryStartInput() {
+  return getDefaultHistoryStart().slice(0, 10);
+}
+
+export function getTodayInputValue() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 async function mapWithConcurrency<T, U>(
@@ -31,13 +39,16 @@ async function mapWithConcurrency<T, U>(
   return results;
 }
 
-export async function buildScreenerDataset(tier: UniverseTier | "all"): Promise<{
+export async function buildScreenerDataset(
+  tier: UniverseTier | "all",
+  historyStart: string = getDefaultHistoryStart(),
+): Promise<{
   response: ScreenerResponse;
   snapshots: FeatureSnapshot[];
 }> {
   const universe = tier === "all" ? getUniverse() : getUniverseByTier(tier);
   const provider = createMarketDataProvider();
-  const start = getHistoryStart();
+  const start = historyStart;
 
   const dataset = (
     await mapWithConcurrency(universe, CONCURRENCY, async (ticker) => {

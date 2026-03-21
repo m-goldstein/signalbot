@@ -1,9 +1,11 @@
 import { hasOpenAIConfig } from "@/lib/openai/config";
-import { buildScreenerDataset } from "@/lib/screener/service";
+import { buildScreenerDataset, getDefaultHistoryStart } from "@/lib/screener/service";
 import { analyzeScreenerSnapshots } from "@/lib/screener/gpt";
 import { ScreenerGptResponse } from "@/lib/screener/types";
 import { UniverseTier } from "@/lib/universe/types";
 import { NextRequest, NextResponse } from "next/server";
+
+const HISTORY_START_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function parseTier(rawTier: string | null): UniverseTier | "all" {
   if (!rawTier || rawTier === "all") {
@@ -22,6 +24,26 @@ function parseInteger(value: string | null, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseHistoryStart(rawHistoryStart: string | null) {
+  if (!rawHistoryStart) {
+    return getDefaultHistoryStart();
+  }
+
+  const candidate = rawHistoryStart.trim();
+
+  if (!HISTORY_START_PATTERN.test(candidate)) {
+    throw new Error("historyStart must use YYYY-MM-DD format.");
+  }
+
+  const parsed = new Date(`${candidate}T00:00:00.000Z`);
+
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== candidate) {
+    throw new Error("historyStart is not a valid calendar date.");
+  }
+
+  return parsed.toISOString();
+}
+
 export async function GET(request: NextRequest) {
   try {
     if (!hasOpenAIConfig()) {
@@ -32,13 +54,14 @@ export async function GET(request: NextRequest) {
     const topN = Math.min(10, Math.max(1, parseInteger(request.nextUrl.searchParams.get("topN"), 5)));
     const sort = request.nextUrl.searchParams.get("sort") ?? "dailyChangePercent";
     const direction = request.nextUrl.searchParams.get("direction") === "asc" ? "asc" : "desc";
+    const historyStart = parseHistoryStart(request.nextUrl.searchParams.get("historyStart"));
     const symbols = (request.nextUrl.searchParams.get("symbols") ?? "")
       .split(",")
       .map((value) => value.trim().toUpperCase())
       .filter(Boolean);
     const symbolSet = new Set(symbols);
 
-    const dataset = await buildScreenerDataset(tier);
+    const dataset = await buildScreenerDataset(tier, historyStart);
     const sortedRows = [...dataset.response.rows].sort((left, right) => {
       const leftValue = left[sort as keyof typeof left];
       const rightValue = right[sort as keyof typeof right];

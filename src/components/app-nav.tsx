@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ContractWatchlistButton } from "@/components/contract-watchlist-button";
 import { LogoutButton } from "@/components/logout-button";
 import styles from "./app-nav.module.css";
 
@@ -24,6 +25,7 @@ export function AppNav() {
         >
           OpenInsider
         </Link>
+        <ContractWatchlistButton />
         <LogoutButton />
       </nav>
     </header>

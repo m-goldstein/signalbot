@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import styles from "./screener-detail-chart.module.css";
 import {
   buildAreaPath,
@@ -15,6 +15,12 @@ import {
   formatPriceTick,
   formatVolumeTick,
 } from "@/lib/chart/engine";
+import {
+  CONTRACT_WATCHLIST_EVENT,
+  ContractWatchlistEntry,
+  isContractWatched,
+  toggleContractWatchlist,
+} from "@/lib/watchlist/contracts";
 
 type ChartPoint = {
   timestamp: string;
@@ -35,6 +41,51 @@ type ScreenerDetailChartProps = {
   sma20: OverlayPoint[];
   sma50: OverlayPoint[];
   sma200: OverlayPoint[];
+  insights: Array<{
+    key: string;
+    title: string;
+    status: "available" | "needs_options_data" | "needs_event_data";
+    summary: string;
+    bullets: string[];
+  }>;
+  optionContracts: {
+    underlyingSymbol: string;
+    count: number;
+    suggested: Array<{
+      symbol: string;
+      optionType: "call" | "put";
+      expirationDate: string;
+      daysToExpiration: number;
+      strikePrice: number;
+      bid: number;
+      ask: number;
+      mark: number;
+      breakEven: number;
+      dailyVolume: number;
+      bidAskSpreadPercent: number;
+      score: number;
+      thesisFit: "aligned" | "countertrend" | "watch";
+      structure: "long_call" | "call_spread" | "long_put" | "put_spread" | "watchlist";
+      rationale: string[];
+    }>;
+    fastLane: Array<{
+      symbol: string;
+      optionType: "call" | "put";
+      expirationDate: string;
+      daysToExpiration: number;
+      strikePrice: number;
+      bid: number;
+      ask: number;
+      mark: number;
+      breakEven: number;
+      dailyVolume: number;
+      bidAskSpreadPercent: number;
+      score: number;
+      thesisFit: "aligned" | "countertrend" | "watch";
+      structure: "long_call" | "call_spread" | "long_put" | "put_spread" | "watchlist";
+      rationale: string[];
+    }>;
+  };
 };
 
 type TimeScale = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL";
@@ -190,6 +241,14 @@ function formatPrice(value: number) {
   return `$${value.toFixed(2)}`;
 }
 
+function formatStructure(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+function formatLane(value: "suggested" | "fast_lane") {
+  return value === "fast_lane" ? "Fast lane" : "Suggested";
+}
+
 function differenceInDays(start: string, end: string) {
   const startTime = new Date(start).getTime();
   const endTime = new Date(end).getTime();
@@ -239,15 +298,53 @@ function nearestLevel(levels: Array<{ label: string; value: number }>, price: nu
   }, null as { label: string; value: number } | null);
 }
 
+function formatInsightStatus(status: ScreenerDetailChartProps["insights"][number]["status"]) {
+  if (status === "available") {
+    return "Computed";
+  }
+
+  if (status === "needs_options_data") {
+    return "Needs options data";
+  }
+
+  return "Needs event data";
+}
+
 export function ScreenerDetailChart({
   symbol,
   bars,
   sma20,
   sma50,
   sma200,
+  insights,
+  optionContracts,
 }: ScreenerDetailChartProps) {
   const [scale, setScale] = useState<TimeScale>("1Y");
   const [overlays, setOverlays] = useState<Record<OverlayKey, boolean>>(DEFAULT_OVERLAYS);
+  const [watchlistSymbols, setWatchlistSymbols] = useState<string[]>([]);
+
+  useEffect(() => {
+    function refresh() {
+      const symbols = [
+        ...new Set(
+          [...optionContracts.suggested, ...optionContracts.fastLane]
+            .filter((contract) => isContractWatched(contract.symbol))
+            .map((contract) => contract.symbol),
+        ),
+      ];
+
+      setWatchlistSymbols(symbols);
+    }
+
+    refresh();
+    window.addEventListener(CONTRACT_WATCHLIST_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+
+    return () => {
+      window.removeEventListener(CONTRACT_WATCHLIST_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, [optionContracts.fastLane, optionContracts.suggested]);
 
   const slice = useMemo(() => {
     const visibleBars = barsForScale(scale, bars);
@@ -364,6 +461,88 @@ export function ScreenerDetailChart({
       ...current,
       [key]: !current[key],
     }));
+  }
+
+  function toggleWatchlist(
+    contract: ScreenerDetailChartProps["optionContracts"]["suggested"][number],
+    lane: "suggested" | "fast_lane",
+  ) {
+    const entry: ContractWatchlistEntry = {
+      ...contract,
+      underlyingSymbol: optionContracts.underlyingSymbol,
+      lane,
+      addedAt: new Date().toISOString(),
+    };
+    toggleContractWatchlist(entry);
+    setWatchlistSymbols((current) =>
+      current.includes(contract.symbol)
+        ? current.filter((symbolValue) => symbolValue !== contract.symbol)
+        : [contract.symbol, ...current],
+    );
+  }
+
+  function renderContractCards(
+    contracts: ScreenerDetailChartProps["optionContracts"]["suggested"],
+    lane: "suggested" | "fast_lane",
+  ) {
+    if (!contracts.length) {
+      return (
+        <div className={styles.emptyContracts}>
+          {lane === "fast_lane"
+            ? "No fast-lane contracts cleared the short-dated alignment and tradability filters."
+            : "No plausible contracts were found under the current scoring rules. That usually means the chain was too wide, too inactive, too short-dated, or too far from the technical target."}
+        </div>
+      );
+    }
+
+    return (
+      <div className={styles.contractGrid}>
+        {contracts.map((contract) => {
+          const watched = watchlistSymbols.includes(contract.symbol);
+
+          return (
+            <article key={`${lane}-${contract.symbol}`} className={styles.contractCard}>
+              <div className={styles.contractHeader}>
+                <div>
+                  <h4>{contract.symbol}</h4>
+                  <p>
+                    {contract.optionType} | strike {formatPrice(contract.strikePrice)} | exp {contract.expirationDate}
+                  </p>
+                </div>
+                <div className={styles.contractHeaderActions}>
+                  <span className={styles.contractScore}>Score {contract.score.toFixed(1)}</span>
+                  <button
+                    type="button"
+                    className={watched ? styles.watchButtonActive : styles.watchButton}
+                    onClick={() => toggleWatchlist(contract, lane)}
+                    aria-label={`${watched ? "Remove" : "Add"} ${contract.symbol} ${formatLane(lane)} contract ${watched ? "from" : "to"} watchlist`}
+                  >
+                    {watched ? "★ Watchlist" : "☆ Watchlist"}
+                  </button>
+                </div>
+              </div>
+
+              <div className={styles.contractMetrics}>
+                <div><span>Fit</span><strong>{contract.thesisFit}</strong></div>
+                <div><span>Structure</span><strong>{formatStructure(contract.structure)}</strong></div>
+                <div><span>DTE</span><strong>{contract.daysToExpiration}</strong></div>
+                <div><span>Mark</span><strong>{formatPrice(contract.mark)}</strong></div>
+                <div><span>Bid / ask</span><strong>{formatPrice(contract.bid)} / {formatPrice(contract.ask)}</strong></div>
+                <div><span>Break-even</span><strong>{formatPrice(contract.breakEven)}</strong></div>
+                <div><span>Daily volume</span><strong>{contract.dailyVolume}</strong></div>
+                <div><span>Spread %</span><strong>{formatPercent(contract.bidAskSpreadPercent)}</strong></div>
+              </div>
+
+              <ul className={styles.contractList}>
+                {contract.rationale.map((item) => (
+                  <li key={`${contract.symbol}-${item}`}>{item}</li>
+                ))}
+              </ul>
+            </article>
+          );
+        })}
+      </div>
+    );
   }
 
   return (
@@ -575,6 +754,61 @@ export function ScreenerDetailChart({
           </text>
         </svg>
       ) : null}
+
+      <section className={styles.contractSection}>
+        <div className={styles.insightHeader}>
+          <h3>Suggested option contracts</h3>
+          <p>
+            Ranked from the live Alpaca chain using setup alignment, break-even plausibility, days to expiration,
+            spread quality, and activity. {optionContracts.count ? `${optionContracts.count} contracts were scanned.` : "No contracts were returned from the chain feed."}
+          </p>
+        </div>
+        {renderContractCards(optionContracts.suggested, "suggested")}
+      </section>
+
+      <section className={styles.contractSection}>
+        <div className={styles.insightHeader}>
+          <h3>Fast lane contracts</h3>
+          <p>
+            Short-dated contracts ranked for immediate setups, including same-day and end-of-week expirations when
+            the directional alignment, timing window, and quote quality are strong enough.
+          </p>
+        </div>
+        {renderContractCards(optionContracts.fastLane, "fast_lane")}
+      </section>
+
+      <section className={styles.insightSection}>
+        <div className={styles.insightHeader}>
+          <h3>{symbol} setup analysis</h3>
+          <p>Relative performance, setup quality, timing, and options-oriented reads derived from the current historical slice and long-horizon feature set.</p>
+        </div>
+        <div className={styles.insightGrid}>
+          {insights.map((insight) => (
+            <article key={insight.key} className={styles.insightCard}>
+              <div className={styles.insightCardHeader}>
+                <h4>{insight.title}</h4>
+                <span
+                  className={
+                    insight.status === "available"
+                      ? styles.statusAvailable
+                      : insight.status === "needs_options_data"
+                        ? styles.statusNeedsOptions
+                        : styles.statusNeedsEvent
+                  }
+                >
+                  {formatInsightStatus(insight.status)}
+                </span>
+              </div>
+              <p className={styles.insightSummary}>{insight.summary}</p>
+              <ul className={styles.insightList}>
+                {insight.bullets.map((bullet) => (
+                  <li key={`${insight.key}-${bullet}`}>{bullet}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
     </section>
   );
 }

@@ -1,8 +1,12 @@
 import { AppNav } from "@/components/app-nav";
 import { ScreenerTable } from "@/components/screener-table";
+import { getDefaultHistoryStartInput, getTodayInputValue } from "@/lib/screener/service";
 import styles from "./page.module.css";
 
 export default function Home() {
+  const initialHistoryStartInput = getDefaultHistoryStartInput();
+  const maxHistoryStartInput = getTodayInputValue();
+
   return (
     <div className={styles.page}>
       <main className={styles.main}>
@@ -15,7 +19,10 @@ export default function Home() {
           </p>
         </section>
 
-        <ScreenerTable />
+        <ScreenerTable
+          initialHistoryStartInput={initialHistoryStartInput}
+          maxHistoryStartInput={maxHistoryStartInput}
+        />
       </main>
     </div>
   );

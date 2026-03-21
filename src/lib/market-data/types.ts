@@ -26,6 +26,42 @@ export type BarsResult = {
   source: "alpaca";
 };
 
+export type OptionType = "call" | "put";
+
+export type OptionContractSnapshot = {
+  symbol: string;
+  underlyingSymbol: string;
+  expirationDate: string;
+  daysToExpiration: number;
+  optionType: OptionType;
+  strikePrice: number;
+  bid: number;
+  ask: number;
+  mid: number;
+  mark: number;
+  last: number;
+  dailyVolume: number;
+  bidSize: number;
+  askSize: number;
+  bidAskSpread: number;
+  bidAskSpreadPercent: number;
+  quoteTimestamp: string | null;
+  tradeTimestamp: string | null;
+};
+
+export type OptionSnapshotsQuery = {
+  underlyingSymbol: string;
+  pageSize?: number;
+  maxPages?: number;
+};
+
+export type OptionSnapshotsResult = {
+  underlyingSymbol: string;
+  snapshots: OptionContractSnapshot[];
+  source: "alpaca";
+ };
+
 export interface MarketDataProvider {
   getBars(query: BarsQuery): Promise<BarsResult>;
+  getOptionSnapshots(query: OptionSnapshotsQuery): Promise<OptionSnapshotsResult>;
 }

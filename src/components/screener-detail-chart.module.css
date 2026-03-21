@@ -92,6 +92,220 @@
   color: #374151;
 }
 
+.insightSection {
+  display: grid;
+  gap: 12px;
+}
+
+.contractSection {
+  display: grid;
+  gap: 12px;
+}
+
+.insightHeader {
+  display: grid;
+  gap: 4px;
+}
+
+.insightHeader h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #111827;
+}
+
+.insightHeader p {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: #4b5563;
+}
+
+.insightGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.contractGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.insightCard {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 14px;
+}
+
+.insightCardHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.insightCardHeader h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: #111827;
+}
+
+.insightSummary {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: #374151;
+}
+
+.insightList {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  color: #1f2937;
+  font-size: 0.97rem;
+  line-height: 1.55;
+}
+
+.statusAvailable,
+.statusNeedsOptions,
+.statusNeedsEvent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.statusAvailable {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.statusNeedsOptions {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.statusNeedsEvent {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #c2410c;
+}
+
+.contractCard {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 14px;
+}
+
+.contractHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+
+.contractHeaderActions {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.contractHeader h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: #111827;
+}
+
+.contractHeader p {
+  margin: 4px 0 0;
+  font-size: 0.96rem;
+  color: #4b5563;
+}
+
+.contractScore {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.84rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.watchButton,
+.watchButtonActive {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.watchButtonActive {
+  background: #111827;
+  border-color: #111827;
+  color: #fff;
+}
+
+.contractMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.contractMetrics div {
+  display: grid;
+  gap: 4px;
+}
+
+.contractMetrics span {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+}
+
+.contractMetrics strong {
+  font-size: 0.98rem;
+  color: #111827;
+}
+
+.contractList {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  color: #1f2937;
+  font-size: 0.97rem;
+  line-height: 1.55;
+}
+
+.emptyContracts {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 14px;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: #374151;
+}
+
 .legendItem {
   display: inline-flex;
   align-items: center;
@@ -116,5 +330,31 @@
 
   .detailMetrics {
     grid-template-columns: 1fr;
+  }
+
+  .insightGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .contractGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .insightCardHeader {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .contractHeader {
+    flex-direction: column;
+  }
+
+  .contractHeaderActions {
+    width: 100%;
+    justify-items: start;
+  }
+
+  .contractMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

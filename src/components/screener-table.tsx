@@ -1,9 +1,15 @@
 "use client";
 
+import {
+  createAnalysisQueryKey,
+  readCachedScreenerAnalysis,
+  writeCachedScreenerAnalysis,
+} from "@/lib/client/analysis-cache";
+import { isTradingSessionOpen } from "@/lib/client/market-session";
 import { ScreenerGptResponse, ScreenerResponse, ScreenerRow, ScreenerSortField } from "@/lib/screener/types";
 import { UniverseTier } from "@/lib/universe/types";
 import { ScreenerDetailChart } from "@/components/screener-detail-chart";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import styles from "./screener-table.module.css";
 
 const SORT_OPTIONS: Array<{ value: ScreenerSortField; label: string }> = [
@@ -42,6 +48,8 @@ const TABLE_SORT_FIELDS: Array<{
   { label: "Liquidity", field: "averageDollarVolume20", hint: "adv20" },
   { label: "Options", field: "directionalConvictionScore", hint: "options conviction" },
 ];
+const SCREENER_GPT_CACHE_KEY = "wolfdesk.screener.gpt";
+const SCREENER_SELECTION_CACHE_KEY = "wolfdesk.screener.selection";
 
 function formatPercent(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -67,11 +75,19 @@ function formatSegment(value: string) {
   return value.replaceAll("_", " ");
 }
 
-function formatSection(value: "tech" | "leaders") {
-  return value === "tech" ? "Tech stocks" : "Market leaders and benchmarks";
+function formatSection(value: "tech" | "leaders" | "defense") {
+  if (value === "tech") {
+    return "Tech stocks";
+  }
+
+  if (value === "leaders") {
+    return "Market leaders and benchmarks";
+  }
+
+  return "Defense contractors";
 }
 
-type SectionKey = "selected" | "tech" | "leaders";
+type SectionKey = "selected" | "tech" | "leaders" | "defense";
 
 function compareNumber(left: number, operator: string, right: number) {
   if (operator === "<") {
@@ -155,21 +171,120 @@ function matchesSearch(row: ScreenerRow, rawQuery: string) {
   });
 }
 
-export function ScreenerTable() {
+function readStoredSelectedRows() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SCREENER_SELECTION_CACHE_KEY);
+
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((value) => String(value).trim().toUpperCase().replace(/[^A-Z0-9.-]/g, ""))
+      .filter(Boolean)
+      .slice(0, 100);
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredSelectedRows(symbols: string[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(SCREENER_SELECTION_CACHE_KEY, JSON.stringify(symbols));
+}
+
+type ScreenerTableProps = {
+  initialHistoryStartInput: string;
+  maxHistoryStartInput: string;
+};
+
+export function ScreenerTable({
+  initialHistoryStartInput,
+  maxHistoryStartInput,
+}: ScreenerTableProps) {
   const [tier, setTier] = useState<UniverseTier | "all">("all");
   const [sort, setSort] = useState<ScreenerSortField>("dailyChangePercent");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
   const [rows, setRows] = useState<ScreenerRow[]>([]);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [historyStart, setHistoryStart] = useState<string>("");
+  const [historyStartInput, setHistoryStartInput] = useState<string>(initialHistoryStartInput);
   const [analysis, setAnalysis] = useState<ScreenerGptResponse | null>(null);
-  const [selectedSymbol, setSelectedSymbol] = useState<string>("");
+  const [expandedRowKey, setExpandedRowKey] = useState<string>("");
   const [detail, setDetail] = useState<{
     symbol: string;
     name: string;
     segment: string;
     tier: string;
     snapshot: Record<string, unknown>;
+    benchmarkComparisons: Array<{
+      symbol: string;
+      read: {
+        oneMonthSpread: number;
+        threeMonthSpread: number;
+        sixMonthSpread: number;
+        upCaptureSpread: number;
+        downCaptureSpread: number;
+      };
+    }>;
+    insights: Array<{
+      key: string;
+      title: string;
+      status: "available" | "needs_options_data" | "needs_event_data";
+      summary: string;
+      bullets: string[];
+    }>;
+    optionContracts: {
+      underlyingSymbol: string;
+      count: number;
+      suggested: Array<{
+        symbol: string;
+        optionType: "call" | "put";
+        expirationDate: string;
+        daysToExpiration: number;
+        strikePrice: number;
+        bid: number;
+        ask: number;
+        mark: number;
+        breakEven: number;
+        dailyVolume: number;
+        bidAskSpreadPercent: number;
+        score: number;
+        thesisFit: "aligned" | "countertrend" | "watch";
+        structure: "long_call" | "call_spread" | "long_put" | "put_spread" | "watchlist";
+        rationale: string[];
+      }>;
+      fastLane: Array<{
+        symbol: string;
+        optionType: "call" | "put";
+        expirationDate: string;
+        daysToExpiration: number;
+        strikePrice: number;
+        bid: number;
+        ask: number;
+        mark: number;
+        breakEven: number;
+        dailyVolume: number;
+        bidAskSpreadPercent: number;
+        score: number;
+        thesisFit: "aligned" | "countertrend" | "watch";
+        structure: "long_call" | "call_spread" | "long_put" | "put_spread" | "watchlist";
+        rationale: string[];
+      }>;
+    };
     series: {
       bars: { timestamp: string; close: number; high: number; low: number; volume: number }[];
       sma20: { timestamp: string; value: number | null }[];
@@ -177,68 +292,131 @@ export function ScreenerTable() {
       sma200: { timestamp: string; value: number | null }[];
     };
   } | null>(null);
-  const [topN, setTopN] = useState("5");
   const [tableQueries, setTableQueries] = useState<Record<SectionKey, string>>({
     selected: "",
     tech: "",
     leaders: "",
+    defense: "",
   });
   const [error, setError] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const analysisQueryKey = useMemo(
+    () => createAnalysisQueryKey(["screener", tier, sort, direction, historyStartInput, ...selectedRows.slice().sort()]),
+    [direction, historyStartInput, selectedRows, sort, tier],
+  );
 
-  useEffect(() => {
-    let isActive = true;
+  async function loadRows(options?: { preserveState?: boolean }) {
+    const preserveState = options?.preserveState ?? false;
 
-    async function loadRows() {
-      setIsLoading(true);
-      setError("");
+    setIsLoading(true);
+    setError("");
 
-      try {
-        const params = new URLSearchParams({
-          tier,
-          sort,
-          direction,
-        });
-        const response = await fetch(`/api/screener?${params.toString()}`);
-        const payload = (await response.json()) as ScreenerResponse & { error?: string };
+    try {
+      const params = new URLSearchParams({
+        tier,
+        sort,
+        direction,
+        historyStart: historyStartInput,
+      });
+      const response = await fetch(`/api/screener?${params.toString()}`);
+      const payload = (await response.json()) as ScreenerResponse & { error?: string };
 
-        if (!response.ok) {
-          if (isActive) {
-            setError(payload.error || "Screener request failed.");
-            setRows([]);
-          }
-          return;
-        }
+      if (!response.ok) {
+        setError(payload.error || "Screener request failed.");
+        setRows([]);
+        return;
+      }
 
-        if (isActive) {
-          setRows(payload.rows);
-          setHistoryStart(payload.historyStart);
-          setAnalysis(null);
+      setRows(payload.rows);
+      setHistoryStart(payload.historyStart);
+
+      if (!preserveState) {
+        setAnalysis(null);
+        setDetail(null);
+        setExpandedRowKey("");
+        const storedSelected = readStoredSelectedRows().filter((symbol) =>
+          payload.rows.some((row) => row.symbol === symbol),
+        );
+        setSelectedRows(storedSelected);
+        setTableQueries({ selected: "", tech: "", leaders: "", defense: "" });
+        return;
+      }
+
+      setSelectedRows((current) => current.filter((symbol) => payload.rows.some((row) => row.symbol === symbol)));
+
+      if (detail && expandedRowKey) {
+        const expandedSymbol = expandedRowKey.split(":")[1] ?? "";
+
+        if (!payload.rows.some((row) => row.symbol === expandedSymbol)) {
+          setExpandedRowKey("");
           setDetail(null);
-          setSelectedSymbol("");
-          setSelectedRows([]);
-          setTableQueries({ selected: "", tech: "", leaders: "" });
-        }
-      } catch {
-        if (isActive) {
-          setError("Network request failed.");
-          setRows([]);
-        }
-      } finally {
-        if (isActive) {
-          setIsLoading(false);
+        } else {
+          void loadDetail(expandedSymbol, expandedRowKey, true);
         }
       }
+    } catch {
+      setError("Network request failed.");
+      setRows([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadRows();
+  }, [direction, historyStartInput, sort, tier]);
+
+  useEffect(() => {
+    const cached = readCachedScreenerAnalysis(SCREENER_GPT_CACHE_KEY, analysisQueryKey);
+
+    if (cached) {
+      setAnalysis(cached);
+      return;
     }
 
-    void loadRows();
+    setAnalysis((current) => {
+      if (!current) {
+        return null;
+      }
 
-    return () => {
-      isActive = false;
-    };
-  }, [tier, sort, direction]);
+      return createAnalysisQueryKey([
+        "screener",
+        tier,
+        sort,
+        direction,
+        historyStartInput,
+        ...current.results.map((entry) => entry.symbol).sort(),
+      ]) === analysisQueryKey
+        ? current
+        : null;
+    });
+  }, [analysisQueryKey, direction, historyStartInput, sort, tier]);
+
+  useEffect(() => {
+    if (!selectedRows.length) {
+      setAnalysis(null);
+    }
+  }, [selectedRows]);
+
+  useEffect(() => {
+    writeStoredSelectedRows(selectedRows);
+  }, [selectedRows]);
+
+  useEffect(() => {
+    if (!isTradingSessionOpen()) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (isTradingSessionOpen()) {
+        void loadRows({ preserveState: true });
+      }
+    }, 15000);
+
+    return () => window.clearInterval(intervalId);
+  }, [direction, expandedRowKey, historyStartInput, sort, tier, detail]);
 
   async function runAnalysis() {
     setIsAnalyzing(true);
@@ -249,12 +427,14 @@ export function ScreenerTable() {
         tier,
         sort,
         direction,
+        historyStart: historyStartInput,
       });
-      if (selectedRows.length) {
-        params.set("symbols", selectedRows.join(","));
-      } else {
-        params.set("topN", topN);
+      if (!selectedRows.length) {
+        setAnalysis(null);
+        setError("Select at least one row before running GPT analysis.");
+        return;
       }
+      params.set("symbols", selectedRows.join(","));
       const response = await fetch(`/api/screener/analyze?${params.toString()}`);
       const payload = (await response.json()) as ScreenerGptResponse & { error?: string };
 
@@ -265,6 +445,7 @@ export function ScreenerTable() {
       }
 
       setAnalysis(payload);
+      writeCachedScreenerAnalysis(SCREENER_GPT_CACHE_KEY, analysisQueryKey, payload);
     } catch {
       setAnalysis(null);
       setError("Screener analysis request failed.");
@@ -273,8 +454,16 @@ export function ScreenerTable() {
     }
   }
 
-  async function loadDetail(symbol: string) {
-    setSelectedSymbol(symbol);
+  async function loadDetail(symbol: string, rowKey: string, preserveExpandedState = false) {
+    if (!preserveExpandedState && expandedRowKey === rowKey) {
+      setExpandedRowKey("");
+      setDetail(null);
+      return;
+    }
+
+    if (!preserveExpandedState) {
+      setExpandedRowKey(rowKey);
+    }
     setIsLoadingDetail(true);
     setError("");
 
@@ -320,6 +509,7 @@ export function ScreenerTable() {
   const allRowsSelected = rows.length > 0 && selectedRows.length === rows.length;
   const techRows = rows.filter((row) => row.section === "tech");
   const leaderRows = rows.filter((row) => row.section === "leaders");
+  const defenseRows = rows.filter((row) => row.section === "defense");
   const selectedRowSet = new Set(selectedRows);
   const selectedRowsData = rows.filter((row) => selectedRowSet.has(row.symbol));
 
@@ -462,97 +652,137 @@ export function ScreenerTable() {
             <tbody>
               {filteredRows.length ? (
                 filteredRows.map((row) => (
-                  <tr
-                    key={`${row.section}-${row.symbol}-${row.timeframe}`}
-                    className={selectedSymbol === row.symbol ? styles.activeRow : styles.clickableRow}
-                    onClick={() => void loadDetail(row.symbol)}
-                  >
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedRows.includes(row.symbol)}
-                        aria-label={`Select ${row.symbol} for GPT analysis`}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={() => toggleSelectedRow(row.symbol)}
-                      />
-                    </td>
-                    <td>
-                      <div className={styles.symbolCell}>
-                        <strong>{row.symbol}</strong>
-                        <span>{row.name}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className={styles.metricCell}>
-                        <div>
-                          <span className={styles.metricLabel}>Section</span>
-                          <strong>{formatSection(row.section)}</strong>
-                        </div>
-                        <div>
-                          <span className={styles.metricLabel}>Segment</span>
-                          <strong>{formatSegment(row.segment)}</strong>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className={styles.metricCell}>
-                        <div>
-                          <span className={styles.metricLabel}>Close</span>
-                          <strong>{row.close.toFixed(2)}</strong>
-                        </div>
-                        <div>
-                          <span className={styles.metricLabel}>Day</span>
-                          <strong className={row.dailyChangePercent >= 0 ? styles.positive : styles.negative}>
-                            {formatPercent(row.dailyChangePercent)}
-                          </strong>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className={styles.metricCell}>
-                        <div><span className={styles.metricLabel}>1M</span><strong>{formatPercent(row.oneMonthChangePercent)}</strong></div>
-                        <div><span className={styles.metricLabel}>3M</span><strong>{formatPercent(row.threeMonthChangePercent)}</strong></div>
-                        <div><span className={styles.metricLabel}>6M</span><strong>{formatPercent(row.sixMonthChangePercent)}</strong></div>
-                        <div><span className={styles.metricLabel}>1Y</span><strong>{formatPercent(row.oneYearChangePercent)}</strong></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className={styles.metricCell}>
-                        <div><span className={styles.metricLabel}>20</span><strong>{formatPercent(row.distanceFrom20Sma)}</strong></div>
-                        <div><span className={styles.metricLabel}>50</span><strong>{formatPercent(row.distanceFrom50Sma)}</strong></div>
-                        <div><span className={styles.metricLabel}>200</span><strong>{formatPercent(row.distanceFrom200Sma)}</strong></div>
-                        <div><span className={styles.metricLabel}>Stack</span><strong>{row.smaStackAligned ? "Aligned" : "Mixed"}</strong></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className={styles.metricCell}>
-                        <div><span className={styles.metricLabel}>52W Hi</span><strong>{formatPercent(row.distanceFrom52WeekHigh)}</strong></div>
-                        <div><span className={styles.metricLabel}>52W Lo</span><strong>{formatPercent(row.distanceFrom52WeekLow)}</strong></div>
-                        <div><span className={styles.metricLabel}>Breakout</span><strong>{row.breakoutState}</strong></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className={styles.metricCell}>
-                        <div><span className={styles.metricLabel}>ATR</span><strong>{formatPercent(row.atrPercent)}</strong></div>
-                        <div><span className={styles.metricLabel}>RV20</span><strong>{formatPercent(row.realizedVol20)}</strong></div>
-                        <div><span className={styles.metricLabel}>RV60</span><strong>{formatPercent(row.realizedVol60)}</strong></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className={styles.metricCell}>
-                        <div><span className={styles.metricLabel}>ADV20</span><strong>{formatMoney(row.averageDollarVolume20)}</strong></div>
-                        <div><span className={styles.metricLabel}>Vol/20D</span><strong>{formatRatio(row.volumeVs20DayAverage)}</strong></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className={styles.metricCell}>
-                        <div><span className={styles.metricLabel}>Conv</span><strong>{row.directionalConvictionScore.toFixed(1)}</strong></div>
-                        <div><span className={styles.metricLabel}>Premium</span><strong>{row.premiumBuyingScore.toFixed(1)}</strong></div>
-                        <div><span className={styles.metricLabel}>Bias</span><strong>{row.optionsDirectionalBias}</strong></div>
-                        <div><span className={styles.metricLabel}>Struct</span><strong>{row.optionsStructureBias}</strong></div>
-                      </div>
-                    </td>
-                  </tr>
+                  (() => {
+                    const rowKey = `${sectionKey}:${row.symbol}:${row.timeframe}`;
+                    const isExpanded = expandedRowKey === rowKey;
+                    const detailMatches = detail?.symbol === row.symbol;
+
+                    return (
+                      <Fragment key={rowKey}>
+                        <tr
+                          className={isExpanded ? styles.activeRow : styles.clickableRow}
+                          onClick={() => void loadDetail(row.symbol, rowKey)}
+                        >
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={selectedRows.includes(row.symbol)}
+                              aria-label={`Select ${row.symbol} for GPT analysis`}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={() => toggleSelectedRow(row.symbol)}
+                            />
+                          </td>
+                          <td>
+                            <div className={styles.symbolCell}>
+                              <strong>{row.symbol}</strong>
+                              <span>{row.name}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={styles.metricCell}>
+                              <div>
+                                <span className={styles.metricLabel}>Section</span>
+                                <strong>{formatSection(row.section)}</strong>
+                              </div>
+                              <div>
+                                <span className={styles.metricLabel}>Segment</span>
+                                <strong>{formatSegment(row.segment)}</strong>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={styles.metricCell}>
+                              <div>
+                                <span className={styles.metricLabel}>Close</span>
+                                <strong>{row.close.toFixed(2)}</strong>
+                              </div>
+                              <div>
+                                <span className={styles.metricLabel}>Day</span>
+                                <strong className={row.dailyChangePercent >= 0 ? styles.positive : styles.negative}>
+                                  {formatPercent(row.dailyChangePercent)}
+                                </strong>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={styles.metricCell}>
+                              <div><span className={styles.metricLabel}>1M</span><strong>{formatPercent(row.oneMonthChangePercent)}</strong></div>
+                              <div><span className={styles.metricLabel}>3M</span><strong>{formatPercent(row.threeMonthChangePercent)}</strong></div>
+                              <div><span className={styles.metricLabel}>6M</span><strong>{formatPercent(row.sixMonthChangePercent)}</strong></div>
+                              <div><span className={styles.metricLabel}>1Y</span><strong>{formatPercent(row.oneYearChangePercent)}</strong></div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={styles.metricCell}>
+                              <div><span className={styles.metricLabel}>20</span><strong>{formatPercent(row.distanceFrom20Sma)}</strong></div>
+                              <div><span className={styles.metricLabel}>50</span><strong>{formatPercent(row.distanceFrom50Sma)}</strong></div>
+                              <div><span className={styles.metricLabel}>200</span><strong>{formatPercent(row.distanceFrom200Sma)}</strong></div>
+                              <div><span className={styles.metricLabel}>Stack</span><strong>{row.smaStackAligned ? "Aligned" : "Mixed"}</strong></div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={styles.metricCell}>
+                              <div><span className={styles.metricLabel}>52W Hi</span><strong>{formatPercent(row.distanceFrom52WeekHigh)}</strong></div>
+                              <div><span className={styles.metricLabel}>52W Lo</span><strong>{formatPercent(row.distanceFrom52WeekLow)}</strong></div>
+                              <div><span className={styles.metricLabel}>Breakout</span><strong>{row.breakoutState}</strong></div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={styles.metricCell}>
+                              <div><span className={styles.metricLabel}>ATR</span><strong>{formatPercent(row.atrPercent)}</strong></div>
+                              <div><span className={styles.metricLabel}>RV20</span><strong>{formatPercent(row.realizedVol20)}</strong></div>
+                              <div><span className={styles.metricLabel}>RV60</span><strong>{formatPercent(row.realizedVol60)}</strong></div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={styles.metricCell}>
+                              <div><span className={styles.metricLabel}>ADV20</span><strong>{formatMoney(row.averageDollarVolume20)}</strong></div>
+                              <div><span className={styles.metricLabel}>Vol/20D</span><strong>{formatRatio(row.volumeVs20DayAverage)}</strong></div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={styles.metricCell}>
+                              <div><span className={styles.metricLabel}>Conv</span><strong>{row.directionalConvictionScore.toFixed(1)}</strong></div>
+                              <div><span className={styles.metricLabel}>Premium</span><strong>{row.premiumBuyingScore.toFixed(1)}</strong></div>
+                              <div><span className={styles.metricLabel}>Bias</span><strong>{row.optionsDirectionalBias}</strong></div>
+                              <div><span className={styles.metricLabel}>Struct</span><strong>{row.optionsStructureBias}</strong></div>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {isExpanded ? (
+                          <tr className={styles.detailRow}>
+                            <td colSpan={10} className={styles.detailCell}>
+                              <div className={styles.inlineDetail}>
+                                <div className={styles.detailHeader}>
+                                  <h2>{row.symbol} detail</h2>
+                                  <span>
+                                    {isLoadingDetail
+                                      ? "Loading chart..."
+                                      : detailMatches && detail
+                                        ? `${detail.name} / ${detail.segment}`
+                                        : ""}
+                                  </span>
+                                </div>
+
+                                {detailMatches && detail ? (
+                                  <ScreenerDetailChart
+                                    symbol={detail.symbol}
+                                    bars={detail.series.bars}
+                                    sma20={detail.series.sma20}
+                                    sma50={detail.series.sma50}
+                                    sma200={detail.series.sma200}
+                                    insights={detail.insights}
+                                    optionContracts={detail.optionContracts}
+                                  />
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })()
                 ))
               ) : (
                 <tr>
@@ -611,23 +841,25 @@ export function ScreenerTable() {
         </label>
 
         <label>
-          <span>GPT top N fallback</span>
-          <input value={topN} onChange={(event) => setTopN(event.target.value)} type="number" min="1" max="10" />
+          <span>History start</span>
+          <input
+            value={historyStartInput}
+            onChange={(event) => setHistoryStartInput(event.target.value)}
+            type="date"
+            min="2016-01-01"
+            max={maxHistoryStartInput}
+          />
         </label>
       </div>
 
       <div className={styles.actions}>
-        <button type="button" onClick={() => void runAnalysis()}>
-          {isAnalyzing
-            ? "Analyzing..."
-            : selectedRows.length
-              ? `Run GPT analysis on ${selectedRows.length} selected`
-              : `Run GPT analysis on top ${topN}`}
+        <button type="button" onClick={() => void runAnalysis()} disabled={!selectedRows.length || isAnalyzing}>
+          {isAnalyzing ? "Analyzing..." : `Run GPT analysis on ${selectedRows.length} selected`}
         </button>
         <span className={styles.selectionHint}>
           {selectedRows.length
-            ? "Selected rows override the top-N setting."
-            : "If no rows are selected, GPT analysis uses the top-N fallback."}
+            ? "GPT analysis will run only on the selected rows."
+            : "Select one or more rows to enable GPT analysis."}
         </span>
       </div>
 
@@ -693,27 +925,6 @@ export function ScreenerTable() {
         </div>
       ) : null}
 
-      {selectedSymbol ? (
-        <div className={styles.detailWrap}>
-          <div className={styles.detailHeader}>
-            <h2>{selectedSymbol} detail</h2>
-            <span>{isLoadingDetail ? "Loading chart..." : detail ? `${detail.name} / ${detail.segment}` : ""}</span>
-          </div>
-
-          {detail ? (
-            <>
-              <ScreenerDetailChart
-                symbol={detail.symbol}
-                bars={detail.series.bars}
-                sma20={detail.series.sma20}
-                sma50={detail.series.sma50}
-                sma200={detail.series.sma200}
-              />
-            </>
-          ) : null}
-        </div>
-      ) : null}
-
       <div className={styles.sectionActions}>
         <label className={styles.globalSelect}>
           <input
@@ -727,6 +938,7 @@ export function ScreenerTable() {
       </div>
 
       {renderSectionTable(techRows, "Tech stocks", "Thematic semiconductor, infrastructure, software, space, power, and quantum names.", "tech")}
+      {renderSectionTable(defenseRows, "Defense contractors", "Defense primes, aerospace, military contractors, government software, and defense-sector ETFs.", "defense")}
       {renderSectionTable(leaderRows, "Market leaders and benchmarks", "Magnificent 7 names, sector ETFs, and broad market index proxies for context and relative analysis.", "leaders")}
     </section>
   );

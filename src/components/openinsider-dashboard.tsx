@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  createAnalysisQueryKey,
+  readCachedOpenInsiderAnalysis,
+  writeCachedOpenInsiderAnalysis,
+} from "@/lib/client/analysis-cache";
+import { isTradingSessionOpen } from "@/lib/client/market-session";
+import { useEffect, useMemo, useState } from "react";
 import { OpenInsiderGptResponse, OpenInsiderResponse } from "@/lib/openinsider/types";
 import { SimpleBarChart } from "@/components/simple-bar-chart";
 import { SimpleLineChart } from "@/components/simple-line-chart";
+
+const OPENINSIDER_GPT_CACHE_KEY = "wolfdesk.openinsider.gpt";
 
 function formatMoney(value: number) {
   return value.toLocaleString("en-US", {
@@ -52,6 +60,10 @@ export function OpenInsiderDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisTopN, setAnalysisTopN] = useState("5");
+  const analysisQueryKey = useMemo(
+    () => createAnalysisQueryKey(["openinsider", symbol.trim().toUpperCase(), side, count, analysisTopN]),
+    [analysisTopN, count, side, symbol],
+  );
 
   useEffect(() => {
     let isActive = true;
@@ -95,7 +107,10 @@ export function OpenInsiderDashboard() {
     };
   }, []);
 
-  async function load(next?: { symbol?: string; side?: "all" | "buy" | "sale"; count?: string }) {
+  async function load(
+    next?: { symbol?: string; side?: "all" | "buy" | "sale"; count?: string },
+    options?: { preserveAnalysis?: boolean },
+  ) {
     const requestSymbol = next?.symbol ?? symbol;
     const requestSide = next?.side ?? side;
     const requestCount = next?.count ?? count;
@@ -117,7 +132,10 @@ export function OpenInsiderDashboard() {
       }
 
       setData(payload);
-      setGptData(null);
+
+      if (!options?.preserveAnalysis) {
+        setGptData(null);
+      }
     } catch {
       setData(null);
       setError("Request failed.");
@@ -147,6 +165,7 @@ export function OpenInsiderDashboard() {
       }
 
       setGptData(payload);
+      writeCachedOpenInsiderAnalysis(OPENINSIDER_GPT_CACHE_KEY, analysisQueryKey, payload);
     } catch {
       setGptData(null);
       setError("Analysis request failed.");
@@ -154,6 +173,25 @@ export function OpenInsiderDashboard() {
       setIsAnalyzing(false);
     }
   }
+
+  useEffect(() => {
+    const cached = readCachedOpenInsiderAnalysis(OPENINSIDER_GPT_CACHE_KEY, analysisQueryKey);
+    setGptData(cached);
+  }, [analysisQueryKey]);
+
+  useEffect(() => {
+    if (!isTradingSessionOpen()) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (isTradingSessionOpen()) {
+        void load(undefined, { preserveAnalysis: true });
+      }
+    }, 15000);
+
+    return () => window.clearInterval(intervalId);
+  }, [count, side, symbol]);
 
   const topTickers = data?.analysis.tickerSummaries.slice(0, 12) ?? [];
   const dailySeries = data?.analysis.dailySeries.slice(-20) ?? [];
