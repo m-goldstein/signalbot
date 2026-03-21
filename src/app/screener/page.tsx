@@ -1,20 +1,19 @@
-import Link from "next/link";
+import { AppNav } from "@/components/app-nav";
 import { ScreenerTable } from "@/components/screener-table";
-import { LogoutButton } from "@/components/logout-button";
-import styles from "./page.module.css";
+import styles from "../page.module.css";
 
 export default function ScreenerPage() {
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <div className={styles.topBar}>
-          <div className={styles.nav}>
-            <Link href="/" className={styles.backLink}>
-              Back to home
-            </Link>
-            <LogoutButton />
-          </div>
-        </div>
+        <AppNav />
+
+        <section className={styles.section}>
+          <p>
+            Direct screener route. This is the same primary module exposed on the home page.
+          </p>
+        </section>
+
         <ScreenerTable />
       </main>
     </div>

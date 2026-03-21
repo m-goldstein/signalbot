@@ -12,47 +12,15 @@
   max-width: 1440px;
 }
 
-.topBar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.titleBlock {
-  display: grid;
-  gap: 4px;
-}
-
-.titleBlock h1 {
-  font-size: 24px;
-}
-
-.titleBlock p {
-  color: #4b5563;
-}
-
-.nav {
-  display: flex;
-  gap: 8px;
-}
-
-.nav a,
-.nav button {
-  border: 1px solid #d1d5db;
-  background: #fff;
-  padding: 8px 12px;
-  font: inherit;
-}
-
 .section {
   display: grid;
   gap: 12px;
-  border: 1px solid #d1d5db;
-  background: #fff;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
   padding: 16px;
 }
 
 .section p {
-  color: #4b5563;
+  color: var(--muted);
+  line-height: 1.6;
 }

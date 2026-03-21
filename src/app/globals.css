@@ -1,8 +1,12 @@
 :root {
-  --background: #f3f4f6;
+  --background: #f4f6f8;
   --foreground: #111827;
-  --muted: #6b7280;
+  --muted: #4b5563;
   --danger: #b91c1c;
+  --panel: #ffffff;
+  --panel-border: #d1d5db;
+  --accent: #111827;
+  --accent-strong: #111827;
 }
 
 html {
@@ -21,7 +25,9 @@ body {
   flex-direction: column;
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, sans-serif;
+  font-family: Verdana, Tahoma, Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -42,13 +48,19 @@ input,
 select,
 textarea {
   font: inherit;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--panel-border);
   padding: 8px 10px;
   background: #fff;
+  color: var(--foreground);
 }
 
 table th,
 table td {
   border-bottom: 1px solid #e5e7eb;
-  padding: 8px;
+  padding: 10px;
+}
+
+button:hover,
+a:hover {
+  border-color: #9ca3af;
 }
