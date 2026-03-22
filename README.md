@@ -48,22 +48,24 @@ It currently supports:
 - research brief generation
 - GPT analysis of top insider-activity symbols
 
-## Authentication
-
-The app is currently gated with a hardcoded login.
-
-- username: `wolfdesk`
-- password: `0dte`
-
-This is intentionally temporary and should be replaced with real credential handling before broader deployment.
-
 ## Environment
 
 Required environment variables:
 
+- `AUTH_USERNAME`
+- `AUTH_PASSWORD`
+- `AUTH_SESSION_SECRET`
 - `ALPACA_API_KEY`
 - `ALPACA_API_SECRET`
 - `OPENAI_API_KEY`
+
+Authentication is environment-driven. For Vercel, add:
+
+- `AUTH_USERNAME=wolfdesk`
+- `AUTH_PASSWORD=0dte`
+- `AUTH_SESSION_SECRET=<long-random-secret>`
+
+`AUTH_SESSION_SECRET` should be a long random string, not the password.
 
 Optional:
 

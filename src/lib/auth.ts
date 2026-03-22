@@ -1,15 +1,48 @@
 const SESSION_COOKIE = "signalbot_session";
-const SESSION_SECRET = "signalbot-hardcoded-session-secret";
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 14;
 
-export const AUTH_USERNAME = "wolfdesk";
-export const AUTH_PASSWORD = "0dte";
 export const AUTH_COOKIE_NAME = SESSION_COOKIE;
 
 type SessionPayload = {
   u: string;
   exp: number;
 };
+
+type AuthConfig = {
+  username: string;
+  password: string;
+  sessionSecret: string;
+};
+
+function readAuthConfig(): AuthConfig | null {
+  const username = process.env.AUTH_USERNAME?.trim();
+  const password = process.env.AUTH_PASSWORD;
+  const sessionSecret = process.env.AUTH_SESSION_SECRET?.trim();
+
+  if (!username || !password || !sessionSecret) {
+    return null;
+  }
+
+  return {
+    username,
+    password,
+    sessionSecret,
+  };
+}
+
+function getAuthConfig(): AuthConfig {
+  const config = readAuthConfig();
+
+  if (!config) {
+    throw new Error("Authentication is not configured. Set AUTH_USERNAME, AUTH_PASSWORD, and AUTH_SESSION_SECRET.");
+  }
+
+  return config;
+}
+
+export function isAuthConfigured() {
+  return readAuthConfig() !== null;
+}
 
 function toBase64Url(value: ArrayBuffer | string) {
   const bytes =
@@ -35,9 +68,10 @@ function fromBase64Url(value: string) {
 }
 
 async function sign(value: string) {
+  const { sessionSecret } = getAuthConfig();
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(SESSION_SECRET),
+    new TextEncoder().encode(sessionSecret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -52,7 +86,8 @@ async function verify(value: string, signature: string) {
 }
 
 export function isValidCredential(username: string, password: string) {
-  return username === AUTH_USERNAME && password === AUTH_PASSWORD;
+  const config = readAuthConfig();
+  return config ? username === config.username && password === config.password : false;
 }
 
 export async function createSessionToken(username: string) {
@@ -66,6 +101,10 @@ export async function createSessionToken(username: string) {
 }
 
 export async function verifySessionToken(token: string | undefined | null) {
+  if (!isAuthConfigured()) {
+    return null;
+  }
+
   if (!token) {
     return null;
   }

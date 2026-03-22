@@ -104,6 +104,7 @@ type OverlayKey =
   | "expectedMove"
   | "fibonacci"
   | "rsi"
+  | "stochastic"
   | "macd"
   | "volume"
   | "volumeAverage";
@@ -118,6 +119,11 @@ type MacdSeries = {
   macd: OverlayPoint[];
   signal: OverlayPoint[];
   histogram: OverlayPoint[];
+};
+
+type StochasticSeries = {
+  k: OverlayPoint[];
+  d: OverlayPoint[];
 };
 
 const TIME_SCALES: TimeScale[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
@@ -135,6 +141,7 @@ const DEFAULT_OVERLAYS: Record<OverlayKey, boolean> = {
   expectedMove: false,
   fibonacci: false,
   rsi: false,
+  stochastic: false,
   macd: false,
   volume: true,
   volumeAverage: true,
@@ -153,6 +160,7 @@ const OVERLAY_LABELS: Record<OverlayKey, string> = {
   expectedMove: "Expected move",
   fibonacci: "Fibonacci",
   rsi: "RSI 14",
+  stochastic: "Stochastic 14,3,3",
   macd: "MACD",
   volume: "Volume",
   volumeAverage: "Avg vol 20",
@@ -357,6 +365,48 @@ function computeRsiSeries(bars: ChartPoint[], period = 14): OverlayPoint[] {
 
     return { timestamp: bar.timestamp, value: rsi };
   });
+}
+
+function computeStochasticSeries(bars: ChartPoint[], period = 14, smoothK = 3, smoothD = 3): StochasticSeries {
+  const rawK = bars.map((bar, index) => {
+    if (index + 1 < period) {
+      return null;
+    }
+
+    const window = bars.slice(index + 1 - period, index + 1);
+    const highestHigh = Math.max(...window.map((item) => item.high));
+    const lowestLow = Math.min(...window.map((item) => item.low));
+    const range = highestHigh - lowestLow;
+
+    if (range === 0) {
+      return 50;
+    }
+
+    return ((bar.close - lowestLow) / range) * 100;
+  });
+
+  const smoothSeries = (values: Array<number | null>, smoothing: number) =>
+    values.map((value, index) => {
+      if (value === null) {
+        return null;
+      }
+
+      const window = values.slice(Math.max(0, index + 1 - smoothing), index + 1);
+
+      if (window.length < smoothing || window.some((entry) => entry === null)) {
+        return null;
+      }
+
+      return average(window as number[]);
+    });
+
+  const kValues = smoothSeries(rawK, smoothK);
+  const dValues = smoothSeries(kValues, smoothD);
+
+  return {
+    k: wrapSeries(bars, kValues),
+    d: wrapSeries(bars, dValues),
+  };
 }
 
 function computeMacdSeries(bars: ChartPoint[]): MacdSeries {
@@ -597,7 +647,7 @@ export function ScreenerDetailChart({
   optionContracts,
 }: ScreenerDetailChartProps) {
   const [scale, setScale] = useState<TimeScale>("1Y");
-  const [overlays, setOverlays] = useState<Record<OverlayKey, boolean>>(DEFAULT_OVERLAYS);
+  const [overlays, setOverlays] = useState<Record<OverlayKey, boolean>>(() => ({ ...DEFAULT_OVERLAYS }));
   const [watchlistSymbols, setWatchlistSymbols] = useState<string[]>([]);
 
   useEffect(() => {
@@ -633,6 +683,7 @@ export function ScreenerDetailChart({
       bollinger: computeBollingerSeries(bars),
       donchian: computeDonchianSeries(bars),
       rsi: computeRsiSeries(bars),
+      stochastic: computeStochasticSeries(bars),
       macd: computeMacdSeries(bars),
       volumeAverage: computeAverageVolumeSeries(bars),
     };
@@ -652,6 +703,10 @@ export function ScreenerDetailChart({
       bollinger: bandOverlaysForScale(visibleBars, studies.bollinger),
       donchian: bandOverlaysForScale(visibleBars, studies.donchian),
       rsi: overlaysForScale(visibleBars, studies.rsi),
+      stochastic: {
+        k: overlaysForScale(visibleBars, studies.stochastic.k),
+        d: overlaysForScale(visibleBars, studies.stochastic.d),
+      },
       macd: {
         macd: overlaysForScale(visibleBars, studies.macd.macd),
         signal: overlaysForScale(visibleBars, studies.macd.signal),
@@ -675,6 +730,11 @@ export function ScreenerDetailChart({
     margins: { top: 30, right: 92, bottom: 30, left: 92 },
   };
   const rsiFrame = {
+    width,
+    height: 132,
+    margins: { top: 18, right: 92, bottom: 20, left: 92 },
+  };
+  const stochasticFrame = {
     width,
     height: 132,
     margins: { top: 18, right: 92, bottom: 20, left: 92 },
@@ -719,6 +779,9 @@ export function ScreenerDetailChart({
   const rsiDomain = createPriceDomain(rsiValues.length ? rsiValues : [0, 100], 0.08);
   const rsiY = createYScale(Math.max(0, rsiDomain.min), Math.min(100, rsiDomain.max), rsiFrame);
   const rsiTicks = [70, 50, 30];
+
+  const stochasticY = createYScale(0, 100, stochasticFrame);
+  const stochasticTicks = [80, 50, 20];
 
   const macdValues = [
     ...slice.macd.macd.flatMap((point) => (point.value === null ? [] : [point.value])),
@@ -778,6 +841,8 @@ export function ScreenerDetailChart({
   const donchianUpperPath = overlayPath(slice.donchian.upper, xScale, priceY);
   const donchianLowerPath = overlayPath(slice.donchian.lower, xScale, priceY);
   const rsiPath = overlayPath(slice.rsi, xScale, rsiY);
+  const stochasticKPath = overlayPath(slice.stochastic.k, xScale, stochasticY);
+  const stochasticDPath = overlayPath(slice.stochastic.d, xScale, stochasticY);
   const macdPath = overlayPath(slice.macd.macd, xScale, macdY);
   const signalPath = overlayPath(slice.macd.signal, xScale, macdY);
   const avgVolumePath = overlayPath(slice.volumeAverage, xScale, volumeY);
@@ -811,6 +876,8 @@ export function ScreenerDetailChart({
   const latestEma21 = latestValue(slice.ema21);
   const latestVwap = latestValue(slice.vwap);
   const latestRsi = latestValue(slice.rsi);
+  const latestStochasticK = latestValue(slice.stochastic.k);
+  const latestStochasticD = latestValue(slice.stochastic.d);
   const latestMacd = latestValue(slice.macd.macd);
   const latestSignal = latestValue(slice.macd.signal);
   const latestHistogram = latestValue(slice.macd.histogram);
@@ -844,9 +911,9 @@ export function ScreenerDetailChart({
       value:
         latestRsi === null
           ? "Pending"
-          : latestRsi >= 70
+          : latestRsi >= 70 || latestStochasticK !== null && latestStochasticD !== null && latestStochasticK >= 80 && latestStochasticD >= 80
             ? "Extended"
-            : latestRsi <= 30
+            : latestRsi <= 30 || latestStochasticK !== null && latestStochasticD !== null && latestStochasticK <= 20 && latestStochasticD <= 20
               ? "Oversold"
               : latestRsi >= 55
                 ? "Positive"
@@ -908,7 +975,7 @@ export function ScreenerDetailChart({
       title: "Momentum confirmation",
       text:
         latestRsi !== null && latestMacd !== null && latestSignal !== null
-          ? `RSI is ${latestRsi.toFixed(1)} and MACD is ${latestMacd >= latestSignal ? "above" : "below"} signal. ${latestHistogram !== null && latestHistogram > 0 ? "Momentum is accelerating." : latestHistogram !== null && latestHistogram < 0 ? "Momentum is fading." : "Momentum is flat."} This matters for deciding between a straight long option and a spread.`
+          ? `RSI is ${latestRsi.toFixed(1)}, MACD is ${latestMacd >= latestSignal ? "above" : "below"} signal, and Stochastic is ${latestStochasticK !== null && latestStochasticD !== null ? `${latestStochasticK.toFixed(1)}/${latestStochasticD.toFixed(1)}` : "still warming up"}. ${latestHistogram !== null && latestHistogram > 0 ? "Momentum is accelerating." : latestHistogram !== null && latestHistogram < 0 ? "Momentum is fading." : "Momentum is flat."} This matters for deciding between a straight long option and a spread.`
           : "Momentum oscillators are still warming up for this visible window.",
     },
   ];
@@ -1056,7 +1123,7 @@ export function ScreenerDetailChart({
                   <label key={overlayKey} className={styles.checkbox}>
                     <input
                       type="checkbox"
-                      checked={overlays[overlayKey]}
+                      checked={Boolean(overlays[overlayKey])}
                       onChange={() => toggleOverlay(overlayKey)}
                     />
                     <span>{label}</span>
@@ -1074,6 +1141,7 @@ export function ScreenerDetailChart({
             {overlays.bollinger ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#93c5fd" }} />bollinger</span> : null}
             {overlays.donchian ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#fb923c" }} />donchian</span> : null}
             {overlays.rsi ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#2563eb" }} />rsi</span> : null}
+            {overlays.stochastic ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#0f766e" }} />stochastic</span> : null}
             {overlays.macd ? <span className={styles.legendItem}><span className={styles.legendSwatch} style={{ background: "#dc2626" }} />macd</span> : null}
           </div>
 
@@ -1215,6 +1283,38 @@ export function ScreenerDetailChart({
                   </g>
                 ))}
                 <path d={rsiPath} fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" />
+              </svg>
+            ) : null}
+
+            {overlays.stochastic ? (
+              <svg viewBox={`0 0 ${width} ${stochasticFrame.height}`} className={styles.chartFrame} style={{ width: "100%", height: "auto" }}>
+                <rect x="0" y="0" width={width} height={stochasticFrame.height} fill="#ffffff" rx="18" />
+                <rect
+                  x={stochasticFrame.margins.left}
+                  y={stochasticY(80)}
+                  width={width - stochasticFrame.margins.left - stochasticFrame.margins.right}
+                  height={stochasticY(20) - stochasticY(80)}
+                  fill="#eff6ff"
+                  opacity="0.65"
+                />
+                <text x={stochasticFrame.margins.left} y={22} fontSize="13" fontWeight="700" fill="#0f172a">Stochastic 14,3,3</text>
+                {stochasticTicks.map((tick) => (
+                  <g key={tick}>
+                    <line
+                      x1={stochasticFrame.margins.left}
+                      x2={width - stochasticFrame.margins.right}
+                      y1={stochasticY(tick)}
+                      y2={stochasticY(tick)}
+                      stroke={tick === 50 ? "#cbd5e1" : "#e2e8f0"}
+                      strokeDasharray={tick === 50 ? "0" : "6 4"}
+                    />
+                    <text x={stochasticFrame.margins.left - 14} y={stochasticY(tick) + 4} textAnchor="end" fontSize="12" fontWeight="600" fill="#475569">
+                      {tick}
+                    </text>
+                  </g>
+                ))}
+                <path d={stochasticKPath} fill="none" stroke="#0f766e" strokeWidth="2.2" strokeLinecap="round" />
+                <path d={stochasticDPath} fill="none" stroke="#f97316" strokeWidth="1.9" strokeLinecap="round" />
               </svg>
             ) : null}
 

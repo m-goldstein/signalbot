@@ -3,11 +3,19 @@ import {
   AUTH_COOKIE_NAME,
   createSessionToken,
   getSessionCookieOptions,
+  isAuthConfigured,
   isValidCredential,
 } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
+    if (!isAuthConfigured()) {
+      return NextResponse.json(
+        { error: "Authentication is not configured on the server." },
+        { status: 503 },
+      );
+    }
+
     const body = (await request.json()) as { username?: string; password?: string };
     const username = body.username?.trim() ?? "";
     const password = body.password ?? "";
