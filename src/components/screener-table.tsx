@@ -261,6 +261,8 @@ export function ScreenerTable({
   const [rowGraphVisibility, setRowGraphVisibility] = useState<Record<string, boolean>>({});
   const [analysis, setAnalysis] = useState<ScreenerGptResponse | null>(null);
   const [jobs, setJobs] = useState<ScreenerJobState[]>([]);
+  const [hasTriggeredAnalysis, setHasTriggeredAnalysis] = useState(false);
+  const [isStatusTrayDismissed, setIsStatusTrayDismissed] = useState(false);
   const [expandedRowKey, setExpandedRowKey] = useState<string>("");
   const [detail, setDetail] = useState<{
     symbol: string;
@@ -605,6 +607,8 @@ export function ScreenerTable({
       const jobIds = Array.isArray(payload.jobs)
         ? payload.jobs.map((job) => String(job.id ?? "")).filter(Boolean)
         : [];
+      setHasTriggeredAnalysis(true);
+      setIsStatusTrayDismissed(false);
       await refreshStatuses();
       kickWorker(selectedAnalysisEntries, jobIds);
     } catch {
@@ -1132,16 +1136,26 @@ export function ScreenerTable({
       {renderSectionTable(defenseRows, "Defense contractors", "Defense primes, aerospace, military contractors, government software, and defense-sector ETFs.", "defense")}
       {renderSectionTable(leaderRows, "Market leaders and benchmarks", "Magnificent 7 names, sector ETFs, and broad market index proxies for context and relative analysis.", "leaders")}
 
-      {trayJobs.length ? (
+      {hasTriggeredAnalysis && trayJobs.length && !isStatusTrayDismissed ? (
         <aside className={styles.statusTray} aria-live="polite">
           <div className={styles.statusTrayHeader}>
             <div>
               <p className={styles.statusEyebrow}>GPT job tracker</p>
               <h2>Screener analysis status</h2>
             </div>
-            <span className={styles.statusCount}>
-              {pendingJobs.length ? `${pendingJobs.length} active` : `${trayJobs.length} recent`}
-            </span>
+            <div className={styles.statusTrayActions}>
+              <span className={styles.statusCount}>
+                {pendingJobs.length ? `${pendingJobs.length} active` : `${trayJobs.length} recent`}
+              </span>
+              <button
+                type="button"
+                className={styles.statusCloseButton}
+                aria-label="Close screener analysis tracker"
+                onClick={() => setIsStatusTrayDismissed(true)}
+              >
+                x
+              </button>
+            </div>
           </div>
 
           <div className={styles.statusList}>

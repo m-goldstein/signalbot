@@ -346,6 +346,12 @@
   align-items: start;
 }
 
+.statusTrayActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .statusTrayHeader h2 {
   margin: 4px 0 0;
   font-size: 18px;
@@ -364,6 +370,16 @@
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.statusCloseButton {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  font: inherit;
+  line-height: 1;
 }
 
 .statusList {
