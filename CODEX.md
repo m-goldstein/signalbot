@@ -1,5 +1,6 @@
 # codex.md
 
+
 ## Mission
 
 You are working on a research and engineering project for an options-trading system focused on technology, semiconductor, chip manufacturing, and adjacent equities.
