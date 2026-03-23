@@ -92,6 +92,26 @@
   min-height: 40px;
 }
 
+.topPicksButton {
+  background: #111827;
+  color: #fff;
+  border: 1px solid #111827;
+  padding: 0 18px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.topPicksButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.topPicksButton:not(:disabled):hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
 .selectionHint {
   color: var(--muted);
   font-size: 15px;
@@ -597,6 +617,239 @@
 
 .empty {
   color: var(--muted);
+}
+
+/* ── Top Picks Panel ─────────────────────────────────────────────────────── */
+
+.topPicksPanel {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border: 2px solid #111827;
+  background: #f8fafc;
+}
+
+.topPicksHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.topPicksEyebrow {
+  margin: 0;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.topPicksTitle {
+  margin: 6px 0 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.topPicksDismiss {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.topPicksMacro {
+  padding: 14px 16px;
+  border-left: 3px solid #1d4ed8;
+  background: #eff6ff;
+}
+
+.topPicksSectionLabel {
+  margin: 0 0 6px;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.topPicksMacroText {
+  margin: 0;
+  color: #1e293b;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.topPicksSectors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.topPicksSectorCard {
+  padding: 14px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+.topPicksSectorCard p:last-child {
+  margin: 0;
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.topPicksTableWrap {
+  overflow-x: auto;
+  border: 1px solid #d1d5db;
+}
+
+.topPicksTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.topPicksTable th,
+.topPicksTable td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.topPicksTable th {
+  background: #f9fafb;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.topPicksCallRow {
+  background: #f0fdf4;
+}
+
+.topPicksPutRow {
+  background: #fff7ed;
+}
+
+.topPicksCallRow:hover {
+  background: #dcfce7;
+}
+
+.topPicksPutRow:hover {
+  background: #ffedd5;
+}
+
+.topPicksRank {
+  width: 30px;
+  font-weight: 700;
+  color: #6b7280;
+  text-align: center;
+}
+
+.topPicksSymbolCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 110px;
+}
+
+.topPicksSymbolCell strong {
+  font-size: 15px;
+  font-family: var(--font-mono), monospace;
+}
+
+.topPicksSymbolCell span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.topPicksSection {
+  font-size: 11px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9ca3af !important;
+}
+
+.topPicksCallBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.topPicksPutBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  background: #ffedd5;
+  border: 1px solid #fdba74;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.topPicksStructure {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #374151;
+}
+
+.topPicksExpiry {
+  white-space: nowrap;
+  color: #374151;
+  font-size: 13px;
+}
+
+.topPicksConf {
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 14px;
+  color: #111827;
+}
+
+.topPicksRationale {
+  max-width: 340px;
+  white-space: normal;
+  line-height: 1.55;
+  color: #1e293b;
+}
+
+.topPicksRisks {
+  max-width: 200px;
+  white-space: normal;
+  line-height: 1.5;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.topPicksDisclaimer {
+  margin: 0;
+  padding: 10px 14px;
+  background: #fef9c3;
+  border: 1px solid #fde68a;
+  color: #713f12;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 @media (max-width: 980px) {
