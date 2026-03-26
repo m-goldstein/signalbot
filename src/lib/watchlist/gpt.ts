@@ -6,6 +6,9 @@ import { fetchOpenInsiderTrades } from "@/lib/openinsider/scraper";
 import { buildScreenerDetail } from "@/lib/screener/detail";
 import { getTickerMetadata } from "@/lib/universe/service";
 import {
+  AnalysisCitationSource,
+  AnalysisUnverifiedContext,
+  AnalysisVerifiedFinding,
   ContractWatchlistEntry,
   WatchlistContractGptResponse,
   WatchlistContractGptResult,
@@ -38,6 +41,7 @@ type WatchlistContractContext = {
   }>;
   companyHeadlines: WatchlistContractHeadline[];
   marketHeadlines: WatchlistContractHeadline[];
+  sourceCatalog: AnalysisCitationSource[];
   insiderContext: {
     available: boolean;
     summary: string;
@@ -134,24 +138,43 @@ function sanitizeArray(values: string[], itemLimit = 8, itemLength = 260) {
   return values.map((value) => sanitizeText(value, itemLength)).filter(Boolean).slice(0, itemLimit);
 }
 
+function buildSourceCatalog(companyHeadlines: WatchlistContractHeadline[], marketHeadlines: WatchlistContractHeadline[]) {
+  return [...companyHeadlines, ...marketHeadlines].slice(0, 12).map((headline, index) => ({
+    id: index + 1,
+    title: sanitizeText(headline.title, 240),
+    source: sanitizeText(headline.source, 120) || "Unknown",
+    publishedAt: sanitizeText(headline.publishedAt, 120),
+    url: sanitizeText(headline.url, 600),
+    scope: index < companyHeadlines.length ? "company" : "market",
+  }));
+}
+
 function buildPrompt(context: WatchlistContractContext) {
   return `
-You are a financial advisor who specializes in options trading, event-driven catalysts, market structure, volatility, and risk framing.
+You are a financial analyst evaluating a real-money options decision.
 You are evaluating whether a specific watchlisted options contract is worth pursuing.
 
 Your job is not to cheerlead. Your job is to judge whether the contract should be pursued, merely monitored, or avoided.
 
-When evaluating the contract, consider all of the following:
+Use only the packet below.
+- Treat packet facts and numbered sources as the only citable evidence.
+- Do not invent facts, catalysts, dates, sources, numerical values, earnings timing, implied volatility, IV term structure, or option-chain history that are not explicitly present in the packet.
+- If you recall potentially relevant background knowledge that is not explicitly supported by the packet, you may mention it only in "unverifiedModelContext". Never present it as a citation.
+- If a catalyst date, earnings date, or event timing is not explicitly supported by the packet, treat it as unknown and emit a warning.
+- Prefer MONITOR or AVOID when missing IV, event timing, or liquidity context materially limits confidence.
+
+When evaluating the contract, consider all of the following packet inputs:
 - The underlying stock's current technical and volatility state from the screener snapshot
 - Whether the contract's expiration, strike, break-even, spread, and volume make sense for the likely move
 - Whether the contract still appears aligned with the screener's current options bias and structure bias
-- Recent company-specific news and whether it creates positive or negative short-term catalysts
-- Recent public insider trading activity and whether it suggests accumulation, distribution, or mixed signaling
-- Sector, macro, geopolitical, regulatory, or supply-chain factors that may alter the short-term and long-term setup
+- Explicit numbered source items from the packet, if any, for recent news
+- Recent public insider trading activity from the packet
 - The fact that this packet may not include full options-chain history, full implied-volatility history, exact earnings timing, or all fundamental data
 
-Be explicit about missing data. If the contract looks interesting but incomplete data lowers confidence, say so.
-Do not invent facts, catalysts, dates, sources, or numerical values not present in the input.
+Citation rules:
+- Use citation numbers only in "verifiedFindings", and only for source IDs from the packet's sourceCatalog.
+- Do not cite "general knowledge", recollection, or synthesis from memory.
+- Internal packet fields like spread, strike, daysToExpiration, and screener metrics may inform your analysis without citation numbers.
 
 Always return ONLY valid JSON with the following fields:
 - "contractSymbol": string
@@ -168,6 +191,15 @@ Always return ONLY valid JSON with the following fields:
 - "geopoliticalTake": short sentence
 - "actionPlan": concise action recommendation
 - "rationale": concise paragraph
+- "warnings": array of warning codes or short warning strings; include explicit unknowns such as UNKNOWN_EARNINGS_DATE, UNKNOWN_IV_TERM_STRUCTURE, NO_VERIFIED_CATALYST_SOURCE, or INCOMPLETE_OPTIONS_LIQUIDITY when applicable
+- "verifiedFindings": array of objects with:
+  - "claim": short source-backed claim
+  - "citations": array of sourceCatalog IDs supporting that claim
+- "unverifiedModelContext": array of objects with:
+  - "claim": short statement derived from model recollection or synthesis not explicitly source-backed in the packet
+  - "confidence": "LOW" | "MEDIUM" | "HIGH"
+  - "reason": short explanation of why it is unverified
+- "sources": array of the sourceCatalog entries actually relied on, each with "id", "title", "source", "publishedAt", "url", "scope"
 - "companyHeadlines": array of objects with "title", "source", "publishedAt", "url"
 - "marketHeadlines": array of objects with "title", "source", "publishedAt", "url"
 
@@ -207,6 +239,48 @@ function sanitizeHeadline(item: unknown) {
   };
 }
 
+function sanitizeVerifiedFinding(item: unknown): AnalysisVerifiedFinding | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const candidate = item as Record<string, unknown>;
+  const claim = sanitizeText(String(candidate.claim ?? ""), 320);
+  const citations = Array.isArray(candidate.citations)
+    ? candidate.citations
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0)
+        .slice(0, 6)
+    : [];
+
+  if (!claim || !citations.length) {
+    return null;
+  }
+
+  return { claim, citations };
+}
+
+function sanitizeUnverifiedContext(item: unknown): AnalysisUnverifiedContext | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const candidate = item as Record<string, unknown>;
+  const claim = sanitizeText(String(candidate.claim ?? ""), 320);
+  const confidence = sanitizeText(String(candidate.confidence ?? ""), 16).toUpperCase();
+  const reason = sanitizeText(String(candidate.reason ?? ""), 240);
+
+  if (!claim || !reason || (confidence !== "LOW" && confidence !== "MEDIUM" && confidence !== "HIGH")) {
+    return null;
+  }
+
+  return {
+    claim,
+    confidence: confidence as AnalysisUnverifiedContext["confidence"],
+    reason,
+  };
+}
+
 function sanitizeResult(entry: ContractWatchlistEntry, value: unknown): WatchlistContractGptResult {
   if (!value || typeof value !== "object") {
     return {
@@ -224,6 +298,10 @@ function sanitizeResult(entry: ContractWatchlistEntry, value: unknown): Watchlis
       geopoliticalTake: "Geopolitical context could not be synthesized.",
       actionPlan: "Re-run the analysis after refreshing the watchlist context.",
       rationale: "Failed to parse model output.",
+      warnings: ["MODEL_OUTPUT_PARSE_FAILURE"],
+      verifiedFindings: [],
+      unverifiedModelContext: [],
+      sources: [],
       companyHeadlines: [],
       marketHeadlines: [],
     };
@@ -239,6 +317,46 @@ function sanitizeResult(entry: ContractWatchlistEntry, value: unknown): Watchlis
     : [];
   const marketHeadlines = Array.isArray(candidate.marketHeadlines)
     ? candidate.marketHeadlines.map(sanitizeHeadline).filter((item): item is WatchlistContractHeadline => Boolean(item)).slice(0, 6)
+    : [];
+  const warnings = sanitizeArray(Array.isArray(candidate.warnings) ? candidate.warnings.map(String) : [], 12, 120);
+  const verifiedFindings = Array.isArray(candidate.verifiedFindings)
+    ? candidate.verifiedFindings
+        .map(sanitizeVerifiedFinding)
+        .filter((item): item is AnalysisVerifiedFinding => Boolean(item))
+        .slice(0, 8)
+    : [];
+  const unverifiedModelContext = Array.isArray(candidate.unverifiedModelContext)
+    ? candidate.unverifiedModelContext
+        .map(sanitizeUnverifiedContext)
+        .filter((item): item is AnalysisUnverifiedContext => Boolean(item))
+        .slice(0, 8)
+    : [];
+  const sources = Array.isArray(candidate.sources)
+    ? candidate.sources
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const source = item as Record<string, unknown>;
+          const id = Number(source.id);
+          const title = sanitizeText(String(source.title ?? ""), 240);
+
+          if (!Number.isInteger(id) || id <= 0 || !title) {
+            return null;
+          }
+
+          return {
+            id,
+            title,
+            source: sanitizeText(String(source.source ?? ""), 120) || "Unknown",
+            publishedAt: sanitizeText(String(source.publishedAt ?? ""), 120),
+            url: sanitizeText(String(source.url ?? ""), 600),
+            scope: sanitizeText(String(source.scope ?? ""), 32),
+          };
+        })
+        .filter((item): item is AnalysisCitationSource => Boolean(item))
+        .slice(0, 12)
     : [];
 
   return {
@@ -256,6 +374,10 @@ function sanitizeResult(entry: ContractWatchlistEntry, value: unknown): Watchlis
     geopoliticalTake: sanitizeText(String(candidate.geopoliticalTake ?? ""), 700) || "No geopolitical take returned.",
     actionPlan: sanitizeText(String(candidate.actionPlan ?? ""), 900) || "No action plan returned.",
     rationale: sanitizeText(String(candidate.rationale ?? ""), 1800) || "No rationale returned.",
+    warnings,
+    verifiedFindings,
+    unverifiedModelContext,
+    sources,
     companyHeadlines,
     marketHeadlines,
   };
@@ -292,6 +414,7 @@ async function buildContext(entry: ContractWatchlistEntry): Promise<WatchlistCon
 
   const insiderAnalysis = insiderResult ? analyzeOpenInsiderTrades(insiderResult.trades) : null;
   const tickerResearch = insiderAnalysis?.tickerResearchSummaries.find((item) => item.ticker === metadata.symbol) ?? null;
+  const sourceCatalog = buildSourceCatalog(companyHeadlines, marketHeadlines);
 
   return {
     entry,
@@ -323,6 +446,7 @@ async function buildContext(entry: ContractWatchlistEntry): Promise<WatchlistCon
     })),
     companyHeadlines,
     marketHeadlines,
+    sourceCatalog,
     insiderContext: tickerResearch
       ? {
           available: true,
@@ -380,6 +504,48 @@ export async function analyzeWatchlistContract(
             geopoliticalTake: { type: "string" },
             actionPlan: { type: "string" },
             rationale: { type: "string" },
+            warnings: { type: "array", items: { type: "string" } },
+            verifiedFindings: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  claim: { type: "string" },
+                  citations: { type: "array", items: { type: "integer" } },
+                },
+                required: ["claim", "citations"],
+              },
+            },
+            unverifiedModelContext: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  claim: { type: "string" },
+                  confidence: { type: "string", enum: ["LOW", "MEDIUM", "HIGH"] },
+                  reason: { type: "string" },
+                },
+                required: ["claim", "confidence", "reason"],
+              },
+            },
+            sources: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  id: { type: "integer" },
+                  title: { type: "string" },
+                  source: { type: "string" },
+                  publishedAt: { type: "string" },
+                  url: { type: "string" },
+                  scope: { type: "string" },
+                },
+                required: ["id", "title", "source", "publishedAt", "url", "scope"],
+              },
+            },
             companyHeadlines: {
               type: "array",
               items: {
@@ -424,6 +590,10 @@ export async function analyzeWatchlistContract(
             "geopoliticalTake",
             "actionPlan",
             "rationale",
+            "warnings",
+            "verifiedFindings",
+            "unverifiedModelContext",
+            "sources",
             "companyHeadlines",
             "marketHeadlines",
           ],

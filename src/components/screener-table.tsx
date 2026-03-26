@@ -1117,10 +1117,21 @@ export function ScreenerTable({
             </button>
           </div>
 
-          {topPicks.macroContext ? (
+          {topPicks.macroContext || topPicks.warnings.length || topPicks.verifiedFindings.length || topPicks.unverifiedModelContext.length ? (
             <div className={styles.topPicksMacro}>
               <p className={styles.topPicksSectionLabel}>Macro context</p>
-              <p className={styles.topPicksMacroText}>{topPicks.macroContext}</p>
+              {topPicks.macroContext ? <p className={styles.topPicksMacroText}>{topPicks.macroContext}</p> : null}
+              {topPicks.warnings.length ? <p className={styles.topPicksMacroText}>Warnings: {topPicks.warnings.join("; ")}</p> : null}
+              {topPicks.verifiedFindings.length ? (
+                <p className={styles.topPicksMacroText}>
+                  Verified findings: {topPicks.verifiedFindings.map((item) => `${item.claim} [${item.citations.join(",")}]`).join(" | ")}
+                </p>
+              ) : null}
+              {topPicks.unverifiedModelContext.length ? (
+                <p className={styles.topPicksMacroText}>
+                  Unverified model context: {topPicks.unverifiedModelContext.map((item) => `${item.claim} (${item.confidence})`).join(" | ")}
+                </p>
+              ) : null}
             </div>
           ) : null}
 

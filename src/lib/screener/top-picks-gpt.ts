@@ -1,5 +1,7 @@
 import { getOpenAIConfig } from "@/lib/openai/config";
+import { fetchGoogleNewsHeadlines } from "@/lib/news/google-news";
 import { ScreenerRow } from "@/lib/screener/types";
+import { AnalysisCitationSource, AnalysisUnverifiedContext, AnalysisVerifiedFinding } from "@/lib/watchlist/types";
 import OpenAI from "openai";
 
 export type TopPickResult = {
@@ -26,6 +28,10 @@ export type TopPicksGptResult = {
   asOf: string;
   macroContext: string;
   sectorReadings: TopPicksSectorReadings;
+  warnings: string[];
+  verifiedFindings: AnalysisVerifiedFinding[];
+  unverifiedModelContext: AnalysisUnverifiedContext[];
+  sources: AnalysisCitationSource[];
   picks: TopPickResult[];
 };
 
@@ -53,8 +59,61 @@ function formatRow(row: ScreenerRow): string {
   ].join("\n");
 }
 
-function buildPrompt(input: { rows: ScreenerRow[]; asOf: string }): string {
-  const { rows, asOf } = input;
+function sanitizeSourceCatalog(headlines: Awaited<ReturnType<typeof fetchGoogleNewsHeadlines>>, scope: string, startId: number) {
+  return headlines.map((headline, index) => ({
+    id: startId + index,
+    title: headline.title,
+    source: headline.source,
+    publishedAt: headline.publishedAt,
+    url: headline.url,
+    scope,
+  }));
+}
+
+function sanitizeVerifiedFinding(item: unknown): AnalysisVerifiedFinding | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const candidate = item as Record<string, unknown>;
+  const claim = typeof candidate.claim === "string" ? candidate.claim.trim() : "";
+  const citations = Array.isArray(candidate.citations)
+    ? candidate.citations
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0)
+        .slice(0, 6)
+    : [];
+
+  if (!claim || !citations.length) {
+    return null;
+  }
+
+  return { claim, citations };
+}
+
+function sanitizeUnverifiedContext(item: unknown): AnalysisUnverifiedContext | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const candidate = item as Record<string, unknown>;
+  const claim = typeof candidate.claim === "string" ? candidate.claim.trim() : "";
+  const confidence = typeof candidate.confidence === "string" ? candidate.confidence.trim().toUpperCase() : "";
+  const reason = typeof candidate.reason === "string" ? candidate.reason.trim() : "";
+
+  if (!claim || !reason || (confidence !== "LOW" && confidence !== "MEDIUM" && confidence !== "HIGH")) {
+    return null;
+  }
+
+  return {
+    claim,
+    confidence: confidence as AnalysisUnverifiedContext["confidence"],
+    reason,
+  };
+}
+
+function buildPrompt(input: { rows: ScreenerRow[]; asOf: string; sources: AnalysisCitationSource[] }): string {
+  const { rows, asOf, sources } = input;
   const techRows = rows.filter((r) => r.section === "tech");
   const defenseRows = rows.filter((r) => r.section === "defense");
   const leaderRows = rows.filter((r) => r.section === "leaders");
@@ -64,14 +123,14 @@ function buildPrompt(input: { rows: ScreenerRow[]; asOf: string }): string {
   const leaderBlock = leaderRows.map(formatRow).join("\n\n");
 
   return `
-You are a senior options trader and quantitative strategist with deep expertise in equity derivatives, technical analysis, macro economics, sector dynamics, and geopolitical risk.
+You are a financial analyst preparing a real-money candidate list for further options review.
 
 Screener date: ${asOf}
 Next trading day target: ${asOf} (or the next open market session)
 
 Your task has two parts:
-  1. Synthesize a macro and sector-level view using the screener data below combined with your knowledge of current geopolitical conditions, Federal Reserve policy trajectory, global economic trends, AI/semiconductor cycle dynamics, defense spending trends, and earnings season context.
-  2. Identify the 10 BEST options contract opportunities for the next trading day from the universe below.
+  1. Synthesize a macro and sector-level view using only the screener data and numbered source packet below.
+  2. Identify the 10 best underlying setups for near-term options review from the universe below, while acknowledging that full options-chain validation is incomplete.
 
 === METRIC DEFINITIONS ===
 Momentum: 1M/3M/6M/1Y = percent returns over those windows (trailing, daily closes)
@@ -91,7 +150,12 @@ Options signals (internal model scores):
 - Tier 3 speculative names (quantum computing, small-cap space) have low options liquidity — weight accordingly.
 - Confidence levels should reflect the missing IV/chain data: cap at 0.85 even for very strong setups.
 - Do not fabricate specific strike prices or expiry dates. Use the targetExpiry buckets provided.
-- You may and should use your broader knowledge of current macro environment, geopolitical events (tariffs, defense spending, NATO dynamics, AI competition with China, etc.), recent sector earnings, and Fed policy to inform your picks and sector readings.
+- Use numbered citations only for claims supported by the provided source packet.
+- If you recall potentially relevant macro, geopolitical, sector, or policy context that is not explicitly supported by the packet, place it only in "unverifiedModelContext". Never treat it as cited fact.
+- If no explicit source supports a catalyst date, earnings timing, policy event, or event-driven claim, emit a warning and treat it as unknown.
+
+=== SOURCE PACKET ===
+${JSON.stringify(sources, null, 2)}
 
 === SCREENER DATA ===
 
@@ -108,7 +172,7 @@ ${leaderBlock}
 Rank picks by expected edge for the NEXT trading day options position, considering:
 1. Signal convergence: high conviction score + strong premium score + aligned SMA stack + trending momentum + above-average volume = higher edge
 2. Liquidity: adequate dollar volume for realistic options fills
-3. Macro/sector tailwinds or headwinds from your broader knowledge
+3. Macro/sector tailwinds or headwinds from the numbered source packet, plus clearly labeled unverified model context when necessary
 4. Risk/reward proportionality: prefer structures where the technical setup justifies premium outlay
 5. Diversification across sectors and structures is desirable but not mandatory if the best setups cluster
 6. Both bullish (calls) and bearish (puts) setups are valid; include both if the data supports them
@@ -123,6 +187,30 @@ JSON schema (output exactly this structure):
     "defense": "<1-3 sentences: defense contractor setup — budget dynamics, geopolitical tailwinds, sector momentum read>",
     "market": "<1-3 sentences: broad market/index setup — SPY/QQQ/IWM regime, breadth read, risk-on vs risk-off signal>"
   },
+  "warnings": ["<warning strings such as UNKNOWN_EARNINGS_DATE or NO_VERIFIED_MACRO_SOURCE>"],
+  "verifiedFindings": [
+    {
+      "claim": "<short source-backed claim>",
+      "citations": [1]
+    }
+  ],
+  "unverifiedModelContext": [
+    {
+      "claim": "<short recollection or synthesis not explicitly source-backed in packet>",
+      "confidence": "<LOW | MEDIUM | HIGH>",
+      "reason": "<why it is unverified>"
+    }
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "<source title>",
+      "source": "<publisher>",
+      "publishedAt": "<date string>",
+      "url": "<url>",
+      "scope": "<tech | defense | market>"
+    }
+  ],
   "picks": [
     {
       "rank": 1,
@@ -199,10 +287,24 @@ export async function analyzeTopPicks(input: {
 }): Promise<TopPicksGptResult> {
   const config = getOpenAIConfig();
   const client = new OpenAI({ apiKey: config.apiKey });
+  const [techSourcesRaw, defenseSourcesRaw, marketSourcesRaw] = await Promise.all([
+    fetchGoogleNewsHeadlines("(semiconductors OR AI infrastructure OR cloud software) (stocks OR demand OR regulation)", 3).catch(() => []),
+    fetchGoogleNewsHeadlines("(defense contractors OR aerospace OR military contracts) (stocks OR budget OR geopolitics)", 3).catch(() => []),
+    fetchGoogleNewsHeadlines("(Federal Reserve OR Treasury yields OR stock market breadth OR Nasdaq) (markets OR rates)", 3).catch(() => []),
+  ]);
+  const sources = [
+    ...sanitizeSourceCatalog(techSourcesRaw, "tech", 1),
+    ...sanitizeSourceCatalog(defenseSourcesRaw, "defense", techSourcesRaw.length + 1),
+    ...sanitizeSourceCatalog(
+      marketSourcesRaw,
+      "market",
+      techSourcesRaw.length + defenseSourcesRaw.length + 1,
+    ),
+  ];
 
   const completion = await client.chat.completions.create({
     model: config.model,
-    messages: [{ role: "user", content: buildPrompt(input) }],
+    messages: [{ role: "user", content: buildPrompt({ ...input, sources }) }],
     response_format: { type: "json_object" },
   });
 
@@ -231,6 +333,46 @@ export async function analyzeTopPicks(input: {
     asOf: input.asOf,
     macroContext: typeof data.macroContext === "string" ? data.macroContext.trim() : "",
     sectorReadings: parseSectorReadings(data.sectorReadings),
+    warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => String(item).trim()).filter(Boolean).slice(0, 12) : [],
+    verifiedFindings: Array.isArray(data.verifiedFindings)
+      ? data.verifiedFindings
+          .map(sanitizeVerifiedFinding)
+          .filter((item): item is AnalysisVerifiedFinding => item !== null)
+          .slice(0, 10)
+      : [],
+    unverifiedModelContext: Array.isArray(data.unverifiedModelContext)
+      ? data.unverifiedModelContext
+          .map(sanitizeUnverifiedContext)
+          .filter((item): item is AnalysisUnverifiedContext => item !== null)
+          .slice(0, 10)
+      : [],
+    sources: Array.isArray(data.sources)
+      ? data.sources
+          .map((item) => {
+            if (!item || typeof item !== "object") {
+              return null;
+            }
+
+            const source = item as Record<string, unknown>;
+            const id = Number(source.id);
+            const title = typeof source.title === "string" ? source.title.trim() : "";
+
+            if (!Number.isInteger(id) || id <= 0 || !title) {
+              return null;
+            }
+
+            return {
+              id,
+              title,
+              source: typeof source.source === "string" ? source.source.trim() : "Unknown",
+              publishedAt: typeof source.publishedAt === "string" ? source.publishedAt.trim() : "",
+              url: typeof source.url === "string" ? source.url.trim() : "",
+              scope: typeof source.scope === "string" ? source.scope.trim() : "",
+            };
+          })
+          .filter((item): item is AnalysisCitationSource => item !== null)
+          .slice(0, 12)
+      : [],
     picks,
   };
 }

@@ -25,6 +25,26 @@ export type WatchlistContractHeadline = {
   url: string;
 };
 
+export type AnalysisCitationSource = {
+  id: number;
+  title: string;
+  source: string;
+  publishedAt: string;
+  url: string;
+  scope: string;
+};
+
+export type AnalysisVerifiedFinding = {
+  claim: string;
+  citations: number[];
+};
+
+export type AnalysisUnverifiedContext = {
+  claim: string;
+  confidence: "LOW" | "MEDIUM" | "HIGH";
+  reason: string;
+};
+
 export type WatchlistContractGptResult = {
   contractSymbol: string;
   underlyingSymbol: string;
@@ -40,6 +60,10 @@ export type WatchlistContractGptResult = {
   geopoliticalTake: string;
   actionPlan: string;
   rationale: string;
+  warnings: string[];
+  verifiedFindings: AnalysisVerifiedFinding[];
+  unverifiedModelContext: AnalysisUnverifiedContext[];
+  sources: AnalysisCitationSource[];
   companyHeadlines: WatchlistContractHeadline[];
   marketHeadlines: WatchlistContractHeadline[];
 };

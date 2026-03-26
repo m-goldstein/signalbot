@@ -333,8 +333,19 @@ export function WatchlistPanel() {
                         {entry ? (
                           <>
                             <strong>{entry.contractJudgment}</strong>
+                            {entry.warnings.length ? <span>Warnings: {entry.warnings.join("; ")}</span> : null}
                             <span>{entry.thesisSummary}</span>
                             <span>{entry.rationale}</span>
+                            {entry.verifiedFindings.length ? (
+                              <span>
+                                Verified: {entry.verifiedFindings.map((item) => `${item.claim} [${item.citations.join(",")}]`).join(" | ")}
+                              </span>
+                            ) : null}
+                            {entry.unverifiedModelContext.length ? (
+                              <span>
+                                Unverified model context: {entry.unverifiedModelContext.map((item) => `${item.claim} (${item.confidence})`).join(" | ")}
+                              </span>
+                            ) : null}
                           </>
                         ) : (
                           <span>{job?.errorMessage || "Waiting for completed analysis."}</span>
