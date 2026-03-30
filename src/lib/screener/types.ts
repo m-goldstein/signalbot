@@ -90,6 +90,9 @@ export type ScreenerAnalysisJobRecord = {
   id: string;
   requestKey: string;
   symbol: string;
+  rowName: string;
+  segment: string;
+  tier: UniverseTier;
   status: ScreenerAnalysisJobStatus;
   inputHash: string;
   requestedAt: string;

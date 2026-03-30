@@ -1,10 +1,5 @@
 "use client";
 
-import {
-  createAnalysisQueryKey,
-  readCachedScreenerAnalysis,
-  writeCachedScreenerAnalysis,
-} from "@/lib/client/analysis-cache";
 import { isTradingSessionOpen } from "@/lib/client/market-session";
 import {
   ScreenerAnalysisEntry,
@@ -55,7 +50,6 @@ const TABLE_SORT_FIELDS: Array<{
   { label: "Liquidity", field: "averageDollarVolume20", hint: "adv20" },
   { label: "Options", field: "directionalConvictionScore", hint: "options conviction" },
 ];
-const SCREENER_GPT_CACHE_KEY = "wolfdesk.screener.gpt";
 const SCREENER_SELECTION_CACHE_KEY = "wolfdesk.screener.selection";
 
 function formatPercent(value: number) {
@@ -221,6 +215,9 @@ type ScreenerTableProps = {
 type ScreenerJobState = {
   id: string;
   symbol: string;
+  rowName?: string;
+  segment?: string;
+  tier?: UniverseTier;
   status: "queued" | "running" | "completed" | "failed";
   requestedAt: string;
   startedAt: string | null;
@@ -260,8 +257,8 @@ export function ScreenerTable({
   const [historyStartInput, setHistoryStartInput] = useState<string>(initialHistoryStartInput);
   const [showGraphs, setShowGraphs] = useState(true);
   const [rowGraphVisibility, setRowGraphVisibility] = useState<Record<string, boolean>>({});
-  const [analysis, setAnalysis] = useState<ScreenerGptResponse | null>(null);
   const [jobs, setJobs] = useState<ScreenerJobState[]>([]);
+  const [recentJobs, setRecentJobs] = useState<ScreenerJobState[]>([]);
   const [hasTriggeredAnalysis, setHasTriggeredAnalysis] = useState(false);
   const [isStatusTrayDismissed, setIsStatusTrayDismissed] = useState(false);
   const [expandedRowKey, setExpandedRowKey] = useState<string>("");
@@ -349,10 +346,6 @@ export function ScreenerTable({
   const hasLoadedRowsRef = useRef(false);
   const rowsRef = useRef<ScreenerRow[]>([]);
   const jobsRef = useRef<ScreenerJobState[]>([]);
-  const analysisQueryKey = useMemo(
-    () => createAnalysisQueryKey(["screener", tier, sort, direction, historyStartInput, ...selectedRows.slice().sort()]),
-    [direction, historyStartInput, selectedRows, sort, tier],
-  );
   const visibleSymbolKey = useMemo(() => rows.map((row) => row.symbol).join(","), [rows]);
   const selectedAnalysisEntries = useMemo<ScreenerAnalysisEntry[]>(
     () =>
@@ -370,18 +363,25 @@ export function ScreenerTable({
     () => jobs.filter((job) => job.status === "queued" || job.status === "running"),
     [jobs],
   );
-  const modelUsed = jobs.find((job) => job.model)?.model ?? null;
-  const completedSelectedResults = useMemo(
-    () =>
-      selectedRows
-        .map((symbol) => jobs.find((job) => job.symbol === symbol)?.result ?? null)
-        .filter((result): result is NonNullable<ScreenerJobState["result"]> => Boolean(result)),
-    [jobs, selectedRows],
-  );
   const trayJobs = useMemo(
     () => [...jobs].sort((left, right) => right.requestedAt.localeCompare(left.requestedAt)).slice(0, 8),
     [jobs],
   );
+  const recentAnalysis = useMemo<ScreenerGptResponse | null>(() => {
+    const results = recentJobs
+      .map((job) => job.result)
+      .filter((result): result is NonNullable<ScreenerJobState["result"]> => Boolean(result));
+
+    if (!results.length) {
+      return null;
+    }
+
+    return {
+      model: recentJobs.find((job) => job.model)?.model ?? "gpt-5.4",
+      topN: results.length,
+      results,
+    };
+  }, [recentJobs]);
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -427,7 +427,6 @@ export function ScreenerTable({
       setError("");
 
       if (!preserveState) {
-        setAnalysis(null);
         setDetail(null);
         setExpandedRowKey("");
         const storedSelected = readStoredSelectedRows().filter((symbol) =>
@@ -481,6 +480,22 @@ export function ScreenerTable({
     setJobs(Array.isArray(payload.jobs) ? payload.jobs : []);
   }
 
+  async function refreshRecentAnalyses() {
+    const params = new URLSearchParams({
+      days: "3",
+      limit: "50",
+      modelPrefix: "gpt-5.4",
+    });
+    const response = await fetch(`/api/screener/analyze/recent?${params.toString()}`);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to refresh recent screener analyses.");
+    }
+
+    setRecentJobs(Array.isArray(payload.jobs) ? payload.jobs : []);
+  }
+
   async function kickWorker(targetEntries: ScreenerAnalysisEntry[], jobIds?: string[]) {
     void fetch("/api/screener/analyze/run", {
       method: "POST",
@@ -505,50 +520,8 @@ export function ScreenerTable({
   }, [visibleSymbolKey]);
 
   useEffect(() => {
-    const cached = readCachedScreenerAnalysis(SCREENER_GPT_CACHE_KEY, analysisQueryKey);
-    const completedAnalysis =
-      selectedRows.length && completedSelectedResults.length
-        ? {
-            model: modelUsed ?? "unknown",
-            topN: completedSelectedResults.length,
-            results: completedSelectedResults,
-          }
-        : null;
-
-    if (completedAnalysis) {
-      setAnalysis(completedAnalysis);
-      writeCachedScreenerAnalysis(SCREENER_GPT_CACHE_KEY, analysisQueryKey, completedAnalysis);
-      return;
-    }
-
-    if (cached) {
-      setAnalysis(cached);
-      return;
-    }
-
-    setAnalysis((current) => {
-      if (!current) {
-        return null;
-      }
-
-      return createAnalysisQueryKey([
-        "screener",
-        tier,
-        sort,
-        direction,
-        historyStartInput,
-        ...current.results.map((entry) => entry.symbol).sort(),
-      ]) === analysisQueryKey
-        ? current
-        : null;
-    });
-  }, [analysisQueryKey, completedSelectedResults, direction, historyStartInput, modelUsed, selectedRows.length, sort, tier]);
-
-  useEffect(() => {
-    if (!selectedRows.length) {
-      setAnalysis(null);
-    }
-  }, [selectedRows]);
+    void refreshRecentAnalyses().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!pendingJobs.length) {
@@ -580,6 +553,7 @@ export function ScreenerTable({
     const interval = window.setInterval(() => {
       pumpWorker();
       void refreshStatuses().catch(() => undefined);
+      void refreshRecentAnalyses().catch(() => undefined);
     }, 5000);
 
     return () => window.clearInterval(interval);
@@ -609,7 +583,6 @@ export function ScreenerTable({
 
     try {
       if (!selectedAnalysisEntries.length) {
-        setAnalysis(null);
         setError("Select at least one row before running GPT analysis.");
         return;
       }
@@ -623,7 +596,6 @@ export function ScreenerTable({
       const payload = (await response.json()) as { jobs?: Array<{ id?: string }>; error?: string };
 
       if (!response.ok) {
-        setAnalysis(null);
         setError(payload.error || "Screener analysis request failed.");
         return;
       }
@@ -634,9 +606,9 @@ export function ScreenerTable({
       setHasTriggeredAnalysis(true);
       setIsStatusTrayDismissed(false);
       await refreshStatuses();
+      await refreshRecentAnalyses();
       kickWorker(selectedAnalysisEntries, jobIds);
     } catch {
-      setAnalysis(null);
       setError("Screener analysis request failed.");
     } finally {
       setIsAnalyzing(false);
@@ -1252,14 +1224,17 @@ export function ScreenerTable({
         )
       ) : null}
 
-      {analysis ? (
+      {recentAnalysis ? (
         <div className={styles.analysisWrap}>
-          <h2>GPT screener analysis{modelUsed ? ` (${modelUsed})` : ""}</h2>
+          <h2>GPT screener analysis (gpt-5.4)</h2>
           <div className={styles.analysisTableWrap}>
             <table className={styles.analysisTable}>
               <thead>
               <tr>
                 <th>Symbol</th>
+                <th>Company</th>
+                <th>Segment</th>
+                <th>Completed</th>
                 <th>Direction</th>
                 <th>Confidence</th>
                 <th>Options</th>
@@ -1268,21 +1243,29 @@ export function ScreenerTable({
               </tr>
             </thead>
             <tbody>
-              {analysis.results.map((entry) => (
-                <tr key={entry.symbol}>
-                  <td className={styles.analysisSymbol}>{entry.symbol}</td>
-                  <td>{entry.direction}</td>
-                  <td>{entry.confidence.toFixed(2)}</td>
-                  <td>{entry.optionsAction}</td>
-                  <td className={styles.analysisJudgment}>{entry.optionsJudgment}</td>
-                  <td className={styles.rationale}>{entry.rationale}</td>
+              {recentJobs.map((job) => (
+                <tr key={job.id}>
+                  <td className={styles.analysisSymbol}>{job.symbol}</td>
+                  <td>{job.rowName ?? "-"}</td>
+                  <td>{job.segment ? formatSegment(job.segment) : "-"}</td>
+                  <td>{job.completedAt ? new Date(job.completedAt).toLocaleString("en-US") : "-"}</td>
+                  <td>{job.result?.direction ?? "-"}</td>
+                  <td>{typeof job.result?.confidence === "number" ? job.result.confidence.toFixed(2) : "-"}</td>
+                  <td>{job.result?.optionsAction ?? "-"}</td>
+                  <td className={styles.analysisJudgment}>{job.result?.optionsJudgment ?? "-"}</td>
+                  <td className={styles.rationale}>{job.result?.rationale ?? "-"}</td>
                 </tr>
               ))}
               </tbody>
             </table>
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div className={styles.analysisWrap}>
+          <h2>GPT screener analysis (gpt-5.4)</h2>
+          <p className={styles.empty}>No completed gpt-5.4 screener analyses from the past 3 days yet.</p>
+        </div>
+      )}
 
       <div className={styles.sectionActions}>
         <label className={styles.globalSelect}>

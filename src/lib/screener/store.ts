@@ -9,6 +9,9 @@ function toRecord(row: Record<string, unknown>): ScreenerAnalysisJobRecord {
     id: String(row.id),
     requestKey: String(row.request_key),
     symbol: String(row.symbol),
+    rowName: String(row.row_name ?? ""),
+    segment: String(row.segment ?? ""),
+    tier: String(row.tier ?? "tier1") as ScreenerAnalysisJobRecord["tier"],
     status: String(row.status) as ScreenerAnalysisJobStatus,
     inputHash: String(row.input_hash),
     requestedAt: String(row.requested_at),
@@ -106,6 +109,9 @@ export async function submitScreenerAnalysisJobs(entries: ScreenerAnalysisEntry[
       id: crypto.randomUUID(),
       requestKey,
       symbol: entry.symbol,
+      rowName: entry.name,
+      segment: entry.segment,
+      tier: entry.tier,
       status: "queued",
       inputHash,
       requestedAt: new Date().toISOString(),
@@ -167,6 +173,51 @@ export async function submitScreenerAnalysisJobs(entries: ScreenerAnalysisEntry[
   }
 
   return submitted;
+}
+
+export async function getRecentCompletedScreenerJobs(options?: {
+  since?: string;
+  modelPrefix?: string;
+  limit?: number;
+}) {
+  const db = await ensureDatabase();
+  const since = options?.since ?? new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const modelPrefix = options?.modelPrefix?.trim() ?? "gpt-5.4";
+  const limit = Math.max(1, Math.min(options?.limit ?? 50, 100));
+
+  if (db.provider === "postgres" && db.pg) {
+    const rows = await db.pg.unsafe(
+      `SELECT *
+       FROM screener_analysis_jobs
+       WHERE status = 'completed'
+         AND completed_at IS NOT NULL
+         AND completed_at >= $1
+         AND model IS NOT NULL
+         AND model LIKE $2
+       ORDER BY completed_at DESC
+       LIMIT ${limit}`,
+      [since, `${modelPrefix}%`],
+    );
+
+    return (rows as Record<string, unknown>[]).map(toRecord);
+  }
+
+  const sqlite = db.sqlite!;
+  const rows = sqlite
+    .prepare(
+      `SELECT *
+       FROM screener_analysis_jobs
+       WHERE status = 'completed'
+         AND completed_at IS NOT NULL
+         AND completed_at >= ?
+         AND model IS NOT NULL
+         AND model LIKE ?
+       ORDER BY completed_at DESC
+       LIMIT ${limit}`,
+    )
+    .all(since, `${modelPrefix}%`) as Record<string, unknown>[];
+
+  return rows.map(toRecord);
 }
 
 export async function getQueuedScreenerJobs(limit = 4, ids?: string[]) {
