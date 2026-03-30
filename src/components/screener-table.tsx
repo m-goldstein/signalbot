@@ -13,6 +13,7 @@ import {
   ScreenerRow,
   ScreenerSortField,
 } from "@/lib/screener/types";
+import { TopPicksGptResult } from "@/lib/screener/top-picks-gpt";
 import { UniverseTier } from "@/lib/universe/types";
 import { ScreenerDetailChart } from "@/components/screener-detail-chart";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -342,6 +343,8 @@ export function ScreenerTable({
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [topPicks, setTopPicks] = useState<TopPicksGptResult | null>(null);
+  const [isAnalyzingTopPicks, setIsAnalyzingTopPicks] = useState(false);
   const loadInFlightRef = useRef(false);
   const hasLoadedRowsRef = useRef(false);
   const rowsRef = useRef<ScreenerRow[]>([]);
@@ -637,6 +640,35 @@ export function ScreenerTable({
       setError("Screener analysis request failed.");
     } finally {
       setIsAnalyzing(false);
+    }
+  }
+
+  async function runTopPicksAnalysis() {
+    if (!rows.length) return;
+    setIsAnalyzingTopPicks(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/screener/top-picks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows,
+          asOf: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      const payload = (await response.json()) as TopPicksGptResult & { error?: string };
+
+      if (!response.ok) {
+        setError(payload.error || "Top picks analysis failed.");
+        return;
+      }
+
+      setTopPicks(payload);
+    } catch {
+      setError("Top picks analysis request failed.");
+    } finally {
+      setIsAnalyzingTopPicks(false);
     }
   }
 
@@ -1069,6 +1101,14 @@ export function ScreenerTable({
       </div>
 
       <div className={styles.actions}>
+        <button
+          type="button"
+          className={styles.topPicksButton}
+          onClick={() => void runTopPicksAnalysis()}
+          disabled={!rows.length || isAnalyzingTopPicks}
+        >
+          {isAnalyzingTopPicks ? "Analyzing..." : "Analyze options for tomorrow"}
+        </button>
         <button type="button" onClick={() => void runAnalysis()} disabled={!selectedRows.length || isAnalyzing}>
           {isAnalyzing ? "Queueing..." : `Run GPT analysis on ${selectedRows.length} selected`}
         </button>
@@ -1080,6 +1120,109 @@ export function ScreenerTable({
       </div>
 
       {error ? <p className={styles.error}>{error}</p> : null}
+
+      {topPicks ? (
+        <div className={styles.topPicksPanel}>
+          <div className={styles.topPicksHeader}>
+            <div>
+              <p className={styles.topPicksEyebrow}>AI Options Recommendations</p>
+              <h2 className={styles.topPicksTitle}>Top 10 options picks for {topPicks.asOf}{topPicks.model ? ` · ${topPicks.model}` : ""}</h2>
+            </div>
+            <button
+              type="button"
+              className={styles.topPicksDismiss}
+              aria-label="Dismiss top picks"
+              onClick={() => setTopPicks(null)}
+            >
+              ×
+            </button>
+          </div>
+
+          {topPicks.macroContext || topPicks.warnings.length || topPicks.verifiedFindings.length || topPicks.unverifiedModelContext.length ? (
+            <div className={styles.topPicksMacro}>
+              <p className={styles.topPicksSectionLabel}>Macro context</p>
+              {topPicks.macroContext ? <p className={styles.topPicksMacroText}>{topPicks.macroContext}</p> : null}
+              {topPicks.warnings.length ? <p className={styles.topPicksMacroText}>Warnings: {topPicks.warnings.join("; ")}</p> : null}
+              {topPicks.verifiedFindings.length ? (
+                <p className={styles.topPicksMacroText}>
+                  Verified findings: {topPicks.verifiedFindings.map((item) => `${item.claim} [${item.citations.join(",")}]`).join(" | ")}
+                </p>
+              ) : null}
+              {topPicks.unverifiedModelContext.length ? (
+                <p className={styles.topPicksMacroText}>
+                  Unverified model context: {topPicks.unverifiedModelContext.map((item) => `${item.claim} (${item.confidence})`).join(" | ")}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className={styles.topPicksSectors}>
+            {topPicks.sectorReadings.tech ? (
+              <div className={styles.topPicksSectorCard}>
+                <p className={styles.topPicksSectionLabel}>Technology</p>
+                <p>{topPicks.sectorReadings.tech}</p>
+              </div>
+            ) : null}
+            {topPicks.sectorReadings.defense ? (
+              <div className={styles.topPicksSectorCard}>
+                <p className={styles.topPicksSectionLabel}>Defense & Aerospace</p>
+                <p>{topPicks.sectorReadings.defense}</p>
+              </div>
+            ) : null}
+            {topPicks.sectorReadings.market ? (
+              <div className={styles.topPicksSectorCard}>
+                <p className={styles.topPicksSectionLabel}>Market / Benchmarks</p>
+                <p>{topPicks.sectorReadings.market}</p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className={styles.topPicksTableWrap}>
+            <table className={styles.topPicksTable}>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Symbol</th>
+                  <th>Type</th>
+                  <th>Structure</th>
+                  <th>Expiry</th>
+                  <th>Conf</th>
+                  <th>Rationale</th>
+                  <th>Key Risks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topPicks.picks.map((pick) => (
+                  <tr key={`${pick.rank}-${pick.symbol}`} className={pick.optionType === "call" ? styles.topPicksCallRow : styles.topPicksPutRow}>
+                    <td className={styles.topPicksRank}>{pick.rank}</td>
+                    <td>
+                      <div className={styles.topPicksSymbolCell}>
+                        <strong>{pick.symbol}</strong>
+                        <span>{pick.name}</span>
+                        <span className={styles.topPicksSection}>{pick.section}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={pick.optionType === "call" ? styles.topPicksCallBadge : styles.topPicksPutBadge}>
+                        {pick.optionType.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className={styles.topPicksStructure}>{pick.structure.replace("_", " ")}</td>
+                    <td className={styles.topPicksExpiry}>{pick.targetExpiry}</td>
+                    <td className={styles.topPicksConf}>{(pick.confidence * 100).toFixed(0)}%</td>
+                    <td className={styles.topPicksRationale}>{pick.rationale}</td>
+                    <td className={styles.topPicksRisks}>{pick.keyRisks}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className={styles.topPicksDisclaimer}>
+            AI-generated analysis only. Does not account for live IV, options chain liquidity, earnings dates, or bid/ask spreads. Not financial advice. Always verify with your broker before trading.
+          </p>
+        </div>
+      ) : null}
 
       <div className={styles.meta}>
         <article>

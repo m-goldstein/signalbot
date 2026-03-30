@@ -304,6 +304,80 @@ export function sanitizeWatchlistContractGptResponse(value: unknown): WatchlistC
         geopoliticalTake: sanitizeText(item.geopoliticalTake, 1200),
         actionPlan: sanitizeText(item.actionPlan, 1400),
         rationale: sanitizeText(item.rationale, 2400),
+        warnings: sanitizeStringArray(item.warnings, 12, 120),
+        verifiedFindings: Array.isArray(item.verifiedFindings)
+          ? item.verifiedFindings
+              .map((finding) => {
+                if (!finding || typeof finding !== "object") {
+                  return null;
+                }
+
+                const candidateFinding = finding as Record<string, unknown>;
+                const claim = sanitizeText(candidateFinding.claim, 320);
+                const citations = Array.isArray(candidateFinding.citations)
+                  ? candidateFinding.citations
+                      .map((value) => sanitizeNumber(value, 1, 999))
+                      .filter((value): value is number => value !== null && Number.isInteger(value))
+                      .slice(0, 6)
+                  : [];
+
+                if (!claim || !citations.length) {
+                  return null;
+                }
+
+                return { claim, citations };
+              })
+              .filter(Boolean)
+              .slice(0, 10)
+          : [],
+        unverifiedModelContext: Array.isArray(item.unverifiedModelContext)
+          ? item.unverifiedModelContext
+              .map((contextItem) => {
+                if (!contextItem || typeof contextItem !== "object") {
+                  return null;
+                }
+
+                const candidateContext = contextItem as Record<string, unknown>;
+                const claim = sanitizeText(candidateContext.claim, 320);
+                const confidence = sanitizeText(candidateContext.confidence, 16).toUpperCase();
+                const reason = sanitizeText(candidateContext.reason, 240);
+
+                if (!claim || !reason || !["LOW", "MEDIUM", "HIGH"].includes(confidence)) {
+                  return null;
+                }
+
+                return { claim, confidence, reason };
+              })
+              .filter(Boolean)
+              .slice(0, 10)
+          : [],
+        sources: Array.isArray(item.sources)
+          ? item.sources
+              .map((sourceItem) => {
+                if (!sourceItem || typeof sourceItem !== "object") {
+                  return null;
+                }
+
+                const candidateSource = sourceItem as Record<string, unknown>;
+                const id = sanitizeNumber(candidateSource.id, 1, 999);
+                const title = sanitizeText(candidateSource.title, 240);
+
+                if (id === null || !Number.isInteger(id) || !title) {
+                  return null;
+                }
+
+                return {
+                  id,
+                  title,
+                  source: sanitizeText(candidateSource.source, 120) || "Unknown",
+                  publishedAt: sanitizeText(candidateSource.publishedAt, 120),
+                  url: sanitizeText(candidateSource.url, 600),
+                  scope: sanitizeText(candidateSource.scope, 32),
+                };
+              })
+              .filter(Boolean)
+              .slice(0, 12)
+          : [],
         companyHeadlines: sanitizeHeadlines(item.companyHeadlines),
         marketHeadlines: sanitizeHeadlines(item.marketHeadlines),
       } as WatchlistContractGptResponse["results"][number];
