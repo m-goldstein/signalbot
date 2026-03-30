@@ -5,6 +5,7 @@ import { buildScreenerDataset, getDefaultHistoryStart } from "@/lib/screener/ser
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 const MAX_JOBS_PER_INVOCATION = 2;
 
 function parseEntry(value: unknown): ScreenerAnalysisEntry | null {

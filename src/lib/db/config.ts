@@ -7,6 +7,14 @@ export function getDatabaseProvider(): DatabaseProvider {
     return "postgres";
   }
 
+  if (provider === "sqlite") {
+    return "sqlite";
+  }
+
+  if (process.env.DATABASE_URL?.trim()) {
+    return "postgres";
+  }
+
   return "sqlite";
 }
 

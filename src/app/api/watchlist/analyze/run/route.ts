@@ -4,6 +4,7 @@ import { ContractWatchlistEntry } from "@/lib/watchlist/types";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 const MAX_JOBS_PER_INVOCATION = 1;
 
 function parseEntry(value: unknown): ContractWatchlistEntry | null {
