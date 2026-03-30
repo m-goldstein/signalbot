@@ -344,6 +344,8 @@ export function ScreenerTable({
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const loadInFlightRef = useRef(false);
   const hasLoadedRowsRef = useRef(false);
+  const rowsRef = useRef<ScreenerRow[]>([]);
+  const jobsRef = useRef<ScreenerJobState[]>([]);
   const analysisQueryKey = useMemo(
     () => createAnalysisQueryKey(["screener", tier, sort, direction, historyStartInput, ...selectedRows.slice().sort()]),
     [direction, historyStartInput, selectedRows, sort, tier],
@@ -377,6 +379,14 @@ export function ScreenerTable({
     () => [...jobs].sort((left, right) => right.requestedAt.localeCompare(left.requestedAt)).slice(0, 8),
     [jobs],
   );
+
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
 
   async function loadRows(options?: { preserveState?: boolean }) {
     const preserveState = options?.preserveState ?? false;
@@ -542,24 +552,35 @@ export function ScreenerTable({
       return;
     }
 
-    void kickWorker(
-      rows
-        .filter((row) => pendingJobs.some((job) => job.symbol === row.symbol))
-        .map((row) => ({
-          symbol: row.symbol,
-          name: row.name,
-          segment: row.segment,
-          tier: row.tier,
-        })),
-      pendingJobs.map((job) => job.id),
-    );
+    function pumpWorker() {
+      const currentPendingJobs = jobsRef.current.filter((job) => job.status === "queued" || job.status === "running");
+
+      if (!currentPendingJobs.length) {
+        return;
+      }
+
+      void kickWorker(
+        rowsRef.current
+          .filter((row) => currentPendingJobs.some((job) => job.symbol === row.symbol))
+          .map((row) => ({
+            symbol: row.symbol,
+            name: row.name,
+            segment: row.segment,
+            tier: row.tier,
+          })),
+        currentPendingJobs.map((job) => job.id),
+      );
+    }
+
+    pumpWorker();
 
     const interval = window.setInterval(() => {
+      pumpWorker();
       void refreshStatuses().catch(() => undefined);
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, [historyStartInput, pendingJobs.length, visibleSymbolKey]);
+  }, [pendingJobs.length]);
 
   useEffect(() => {
     writeStoredSelectedRows(selectedRows);

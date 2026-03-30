@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { ensureDatabase } from "@/lib/db/client";
 import { ScreenerAnalysisEntry, ScreenerAnalysisJobRecord, ScreenerAnalysisJobStatus, ScreenerGptResponse } from "@/lib/screener/types";
 
+const STALE_RUNNING_JOB_TIMEOUT_MS = 2 * 60 * 1000;
+
 function toRecord(row: Record<string, unknown>): ScreenerAnalysisJobRecord {
   return {
     id: String(row.id),
@@ -14,8 +16,20 @@ function toRecord(row: Record<string, unknown>): ScreenerAnalysisJobRecord {
     completedAt: row.completed_at ? String(row.completed_at) : null,
     errorMessage: row.error_message ? String(row.error_message) : null,
     model: row.model ? String(row.model) : null,
-    result: row.result_payload ? (JSON.parse(String(row.result_payload)) as ScreenerGptResponse["results"][number]) : null,
+    result: parseResultPayload(row.result_payload),
   };
+}
+
+function parseResultPayload(value: unknown): ScreenerGptResponse["results"][number] | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(String(value)) as ScreenerGptResponse["results"][number];
+  } catch {
+    return null;
+  }
 }
 
 function hashEntry(entry: ScreenerAnalysisEntry) {
@@ -156,6 +170,7 @@ export async function submitScreenerAnalysisJobs(entries: ScreenerAnalysisEntry[
 }
 
 export async function getQueuedScreenerJobs(limit = 4, ids?: string[]) {
+  await requeueStaleRunningJobs(ids);
   const db = await ensureDatabase();
 
   if (db.provider === "postgres" && db.pg) {
@@ -181,6 +196,53 @@ export async function getQueuedScreenerJobs(limit = 4, ids?: string[]) {
         .all() as Record<string, unknown>[]);
 
   return rows.map(toRecord);
+}
+
+async function requeueStaleRunningJobs(ids?: string[]) {
+  const db = await ensureDatabase();
+  const cutoff = new Date(Date.now() - STALE_RUNNING_JOB_TIMEOUT_MS).toISOString();
+
+  if (db.provider === "postgres" && db.pg) {
+    if (ids?.length) {
+      const placeholders = ids.map((_, index) => `$${index + 2}`).join(", ");
+      await db.pg.unsafe(
+        `UPDATE screener_analysis_jobs
+         SET status = 'queued', started_at = NULL, completed_at = NULL, error_message = NULL
+         WHERE status = 'running' AND started_at IS NOT NULL AND started_at < $1 AND id IN (${placeholders})`,
+        [cutoff, ...ids],
+      );
+      return;
+    }
+
+    await db.pg.unsafe(
+      `UPDATE screener_analysis_jobs
+       SET status = 'queued', started_at = NULL, completed_at = NULL, error_message = NULL
+       WHERE status = 'running' AND started_at IS NOT NULL AND started_at < $1`,
+      [cutoff],
+    );
+    return;
+  }
+
+  const sqlite = db.sqlite!;
+
+  if (ids?.length) {
+    sqlite
+      .prepare(
+        `UPDATE screener_analysis_jobs
+         SET status = 'queued', started_at = NULL, completed_at = NULL, error_message = NULL
+         WHERE status = 'running' AND started_at IS NOT NULL AND started_at < ? AND id IN (${ids.map(() => "?").join(", ")})`,
+      )
+      .run(cutoff, ...ids);
+    return;
+  }
+
+  sqlite
+    .prepare(
+      `UPDATE screener_analysis_jobs
+       SET status = 'queued', started_at = NULL, completed_at = NULL, error_message = NULL
+       WHERE status = 'running' AND started_at IS NOT NULL AND started_at < ?`,
+    )
+    .run(cutoff);
 }
 
 export async function markScreenerJobRunning(id: string) {

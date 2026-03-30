@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./contract-watchlist-button.module.css";
 import {
   CONTRACT_WATCHLIST_EVENT,
@@ -36,6 +36,8 @@ export function WatchlistPanel() {
   const [jobs, setJobs] = useState<WatchlistJobState[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const entriesRef = useRef<ContractWatchlistEntry[]>([]);
+  const jobsRef = useRef<WatchlistJobState[]>([]);
 
   useEffect(() => {
     function refresh() {
@@ -80,6 +82,14 @@ export function WatchlistPanel() {
   const modelUsed = jobs.find((job) => job.model)?.model ?? null;
   const pendingJobs = jobs.filter((job) => job.status === "queued" || job.status === "running");
 
+  useEffect(() => {
+    entriesRef.current = sortedEntries;
+  }, [sortedEntries]);
+
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
+
   async function refreshStatuses() {
     if (!sortedEntries.length) {
       setJobs([]);
@@ -108,17 +118,28 @@ export function WatchlistPanel() {
       return;
     }
 
-    void kickWorker(
-      sortedEntries.filter((entry) => pendingJobs.some((job) => job.contractSymbol === entry.symbol)),
-      pendingJobs.map((job) => job.id),
-    );
+    function pumpWorker() {
+      const currentPendingJobs = jobsRef.current.filter((job) => job.status === "queued" || job.status === "running");
+
+      if (!currentPendingJobs.length) {
+        return;
+      }
+
+      void kickWorker(
+        entriesRef.current.filter((entry) => currentPendingJobs.some((job) => job.contractSymbol === entry.symbol)),
+        currentPendingJobs.map((job) => job.id),
+      );
+    }
+
+    pumpWorker();
 
     const interval = window.setInterval(() => {
+      pumpWorker();
       void refreshStatuses().catch(() => undefined);
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, [pendingJobs.length, contractListKey]);
+  }, [pendingJobs.length]);
 
   async function kickWorker(targetEntries: ContractWatchlistEntry[], jobIds?: string[]) {
     void fetch("/api/watchlist/analyze/run", {
@@ -307,13 +328,18 @@ export function WatchlistPanel() {
                 {sortedEntries.map((savedEntry) => {
                   const job = statusForSymbol(savedEntry.symbol);
                   const entry = job?.result;
+                  const companyHeadlines = entry?.companyHeadlines ?? [];
+                  const marketHeadlines = entry?.marketHeadlines ?? [];
+                  const positiveCatalysts = entry?.positiveCatalysts ?? [];
+                  const negativeCatalysts = entry?.negativeCatalysts ?? [];
+                  const publishedAt = companyHeadlines[0]?.publishedAt || job?.requestedAt || "";
 
                   return (
                     <tr key={`analysis-${savedEntry.symbol}`}>
                       <td>{savedEntry.underlyingSymbol}</td>
                       <td className={styles.analysisContract}>
                         <strong>{savedEntry.symbol}</strong>
-                        <span>{entry?.companyHeadlines[0]?.publishedAt || job?.requestedAt || ""}</span>
+                        <span>{publishedAt}</span>
                       </td>
                       <td>{entry?.pursueDecision ?? (job?.status === "failed" ? "FAILED" : job?.status ?? "pending")}</td>
                       <td>
@@ -341,10 +367,10 @@ export function WatchlistPanel() {
                         )}
                       </td>
                       <td className={styles.listCell}>
-                        {entry?.positiveCatalysts.length ? (
+                        {positiveCatalysts.length ? (
                           <ul>
-                            {entry.positiveCatalysts.map((item) => (
-                              <li key={`${entry.contractSymbol}-pos-${item}`}>{item}</li>
+                            {positiveCatalysts.map((item) => (
+                              <li key={`${savedEntry.symbol}-pos-${item}`}>{item}</li>
                             ))}
                           </ul>
                         ) : (
@@ -352,10 +378,10 @@ export function WatchlistPanel() {
                         )}
                       </td>
                       <td className={styles.listCell}>
-                        {entry?.negativeCatalysts.length ? (
+                        {negativeCatalysts.length ? (
                           <ul>
-                            {entry.negativeCatalysts.map((item) => (
-                              <li key={`${entry.contractSymbol}-neg-${item}`}>{item}</li>
+                            {negativeCatalysts.map((item) => (
+                              <li key={`${savedEntry.symbol}-neg-${item}`}>{item}</li>
                             ))}
                           </ul>
                         ) : (
@@ -378,14 +404,14 @@ export function WatchlistPanel() {
                         {entry ? (
                           <>
                             <strong>{entry.actionPlan}</strong>
-                            {entry.companyHeadlines.length ? (
+                            {companyHeadlines.length ? (
                               <span>
-                                Company news: {entry.companyHeadlines.slice(0, 2).map((headline) => headline.title).join(" | ")}
+                                Company news: {companyHeadlines.slice(0, 2).map((headline) => headline.title).join(" | ")}
                               </span>
                             ) : null}
-                            {entry.marketHeadlines.length ? (
+                            {marketHeadlines.length ? (
                               <span>
-                                Market context: {entry.marketHeadlines.slice(0, 2).map((headline) => headline.title).join(" | ")}
+                                Market context: {marketHeadlines.slice(0, 2).map((headline) => headline.title).join(" | ")}
                               </span>
                             ) : null}
                           </>

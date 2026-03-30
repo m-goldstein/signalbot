@@ -5,6 +5,7 @@ import { buildScreenerDataset, getDefaultHistoryStart } from "@/lib/screener/ser
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+const MAX_JOBS_PER_INVOCATION = 2;
 
 function parseEntry(value: unknown): ScreenerAnalysisEntry | null {
   if (!value || typeof value !== "object") {
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const jobs = await getQueuedScreenerJobs(4, ids);
+    const jobs = await getQueuedScreenerJobs(MAX_JOBS_PER_INVOCATION, ids);
     const processed: Array<{ id: string; symbol: string; status: string }> = [];
     const dataset = jobs.length ? await buildScreenerDataset("all", historyStart) : null;
     const snapshotMap = new Map(dataset?.snapshots.map((snapshot) => [snapshot.symbol, snapshot]) ?? []);

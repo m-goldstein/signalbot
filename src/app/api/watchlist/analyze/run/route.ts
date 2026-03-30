@@ -4,6 +4,7 @@ import { ContractWatchlistEntry } from "@/lib/watchlist/types";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+const MAX_JOBS_PER_INVOCATION = 1;
 
 function parseEntry(value: unknown): ContractWatchlistEntry | null {
   if (!value || typeof value !== "object") {
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const jobs = await getQueuedJobs(3, ids);
+    const jobs = await getQueuedJobs(MAX_JOBS_PER_INVOCATION, ids);
     const processed: Array<{ id: string; contractSymbol: string; status: string }> = [];
 
     for (const job of jobs) {

@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { ensureDatabase } from "@/lib/db/client";
 import { ContractWatchlistEntry, WatchlistContractGptResult } from "@/lib/watchlist/types";
 
+const STALE_RUNNING_JOB_TIMEOUT_MS = 2 * 60 * 1000;
+
 export type WatchlistAnalysisJobStatus = "queued" | "running" | "completed" | "failed";
 
 export type WatchlistAnalysisJobRecord = {
@@ -32,8 +34,155 @@ function toRecord(row: Record<string, unknown>): WatchlistAnalysisJobRecord {
     completedAt: row.completed_at ? String(row.completed_at) : null,
     errorMessage: row.error_message ? String(row.error_message) : null,
     model: row.model ? String(row.model) : null,
-    result: row.result_payload ? (JSON.parse(String(row.result_payload)) as WatchlistContractGptResult) : null,
+    result: parseResultPayload(row.result_payload),
   };
+}
+
+function sanitizeText(value: unknown, maxLength = 2000) {
+  return String(value ?? "")
+    .replace(/[<>]/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function sanitizeStringArray(value: unknown, maxItems = 8, itemLength = 260) {
+  return Array.isArray(value)
+    ? value.map((item) => sanitizeText(item, itemLength)).filter(Boolean).slice(0, maxItems)
+    : [];
+}
+
+function isPursueDecision(value: string): value is WatchlistContractGptResult["pursueDecision"] {
+  return value === "PURSUE" || value === "MONITOR" || value === "AVOID";
+}
+
+function isBias(value: string): value is WatchlistContractGptResult["shortTermBias"] {
+  return value === "BULLISH" || value === "BEARISH" || value === "NEUTRAL" || value === "MIXED";
+}
+
+function sanitizeHeadlineArray(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const candidate = item as Record<string, unknown>;
+          const title = sanitizeText(candidate.title, 240);
+
+          if (!title) {
+            return null;
+          }
+
+          return {
+            title,
+            source: sanitizeText(candidate.source, 120) || "Unknown",
+            publishedAt: sanitizeText(candidate.publishedAt, 120),
+            url: sanitizeText(candidate.url, 600),
+          };
+        })
+        .filter(
+          (
+            item,
+          ): item is {
+            title: string;
+            source: string;
+            publishedAt: string;
+            url: string;
+          } => Boolean(item),
+        )
+        .slice(0, 6)
+    : [];
+}
+
+function parseResultPayload(value: unknown): WatchlistContractGptResult | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(String(value)) as Record<string, unknown>;
+    const contractSymbol = sanitizeText(parsed.contractSymbol, 48).toUpperCase();
+    const underlyingSymbol = sanitizeText(parsed.underlyingSymbol, 16).toUpperCase();
+
+    if (!contractSymbol || !underlyingSymbol) {
+      return null;
+    }
+
+    const pursueDecision = sanitizeText(parsed.pursueDecision, 16).toUpperCase();
+    const shortTermBias = sanitizeText(parsed.shortTermBias, 16).toUpperCase();
+    const longTermBias = sanitizeText(parsed.longTermBias, 16).toUpperCase();
+    const confidence = typeof parsed.confidence === "number" ? parsed.confidence : Number(parsed.confidence ?? 0);
+
+    return {
+      contractSymbol,
+      underlyingSymbol,
+      pursueDecision: isPursueDecision(pursueDecision) ? pursueDecision : "MONITOR",
+      shortTermBias: isBias(shortTermBias) ? shortTermBias : "MIXED",
+      longTermBias: isBias(longTermBias) ? longTermBias : "MIXED",
+      confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0,
+      contractJudgment: sanitizeText(parsed.contractJudgment, 260),
+      thesisSummary: sanitizeText(parsed.thesisSummary, 1800),
+      positiveCatalysts: sanitizeStringArray(parsed.positiveCatalysts),
+      negativeCatalysts: sanitizeStringArray(parsed.negativeCatalysts),
+      insiderTake: sanitizeText(parsed.insiderTake, 700),
+      geopoliticalTake: sanitizeText(parsed.geopoliticalTake, 700),
+      actionPlan: sanitizeText(parsed.actionPlan, 900),
+      rationale: sanitizeText(parsed.rationale, 1800),
+      companyHeadlines: sanitizeHeadlineArray(parsed.companyHeadlines),
+      marketHeadlines: sanitizeHeadlineArray(parsed.marketHeadlines),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function requeueStaleRunningJobs(ids?: string[]) {
+  const db = await ensureDatabase();
+  const cutoff = new Date(Date.now() - STALE_RUNNING_JOB_TIMEOUT_MS).toISOString();
+
+  if (db.provider === "postgres" && db.pg) {
+    if (ids?.length) {
+      const placeholders = ids.map((_, index) => `$${index + 2}`).join(", ");
+      await db.pg.unsafe(
+        `UPDATE watchlist_analysis_jobs
+         SET status = 'queued', started_at = NULL, completed_at = NULL, error_message = NULL
+         WHERE status = 'running' AND started_at IS NOT NULL AND started_at < $1 AND id IN (${placeholders})`,
+        [cutoff, ...ids],
+      );
+      return;
+    }
+
+    await db.pg.unsafe(
+      `UPDATE watchlist_analysis_jobs
+       SET status = 'queued', started_at = NULL, completed_at = NULL, error_message = NULL
+       WHERE status = 'running' AND started_at IS NOT NULL AND started_at < $1`,
+      [cutoff],
+    );
+    return;
+  }
+
+  const sqlite = db.sqlite!;
+
+  if (ids?.length) {
+    sqlite
+      .prepare(
+        `UPDATE watchlist_analysis_jobs
+         SET status = 'queued', started_at = NULL, completed_at = NULL, error_message = NULL
+         WHERE status = 'running' AND started_at IS NOT NULL AND started_at < ? AND id IN (${ids.map(() => "?").join(", ")})`,
+      )
+      .run(cutoff, ...ids);
+    return;
+  }
+
+  sqlite
+    .prepare(
+      `UPDATE watchlist_analysis_jobs
+       SET status = 'queued', started_at = NULL, completed_at = NULL, error_message = NULL
+       WHERE status = 'running' AND started_at IS NOT NULL AND started_at < ?`,
+    )
+    .run(cutoff);
 }
 
 function hashEntry(entry: ContractWatchlistEntry) {
@@ -175,6 +324,7 @@ export async function submitWatchlistAnalysisJobs(entries: ContractWatchlistEntr
 }
 
 export async function getQueuedJobs(limit = 3, ids?: string[]) {
+  await requeueStaleRunningJobs(ids);
   const db = await ensureDatabase();
 
   if (db.provider === "postgres" && db.pg) {
