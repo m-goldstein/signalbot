@@ -1,6 +1,12 @@
 import crypto from "node:crypto";
 import { ensureDatabase } from "@/lib/db/client";
-import { ContractWatchlistEntry, WatchlistContractGptResult } from "@/lib/watchlist/types";
+import {
+  AnalysisCitationSource,
+  AnalysisUnverifiedContext,
+  AnalysisVerifiedFinding,
+  ContractWatchlistEntry,
+  WatchlistContractGptResult,
+} from "@/lib/watchlist/types";
 
 const STALE_RUNNING_JOB_TIMEOUT_MS = 2 * 60 * 1000;
 
@@ -96,6 +102,95 @@ function sanitizeHeadlineArray(value: unknown) {
     : [];
 }
 
+function sanitizeVerifiedFindings(value: unknown): AnalysisVerifiedFinding[] {
+  return Array.isArray(value)
+    ? value
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const candidate = item as Record<string, unknown>;
+          const claim = sanitizeText(candidate.claim, 320);
+          const citations = Array.isArray(candidate.citations)
+            ? candidate.citations
+                .map((citation) => {
+                  const parsed = typeof citation === "number" ? citation : Number(citation);
+                  return Number.isInteger(parsed) && parsed > 0 && parsed <= 999 ? parsed : null;
+                })
+                .filter((citation): citation is number => citation !== null)
+                .slice(0, 6)
+            : [];
+
+          if (!claim || !citations.length) {
+            return null;
+          }
+
+          return { claim, citations };
+        })
+        .filter((item): item is AnalysisVerifiedFinding => Boolean(item))
+        .slice(0, 10)
+    : [];
+}
+
+function sanitizeUnverifiedContext(value: unknown): AnalysisUnverifiedContext[] {
+  return Array.isArray(value)
+    ? value
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const candidate = item as Record<string, unknown>;
+          const claim = sanitizeText(candidate.claim, 320);
+          const confidence = sanitizeText(candidate.confidence, 16).toUpperCase();
+          const reason = sanitizeText(candidate.reason, 240);
+
+          if (!claim || !reason || (confidence !== "LOW" && confidence !== "MEDIUM" && confidence !== "HIGH")) {
+            return null;
+          }
+
+          return {
+            claim,
+            confidence: confidence as AnalysisUnverifiedContext["confidence"],
+            reason,
+          };
+        })
+        .filter((item): item is AnalysisUnverifiedContext => Boolean(item))
+        .slice(0, 10)
+    : [];
+}
+
+function sanitizeSources(value: unknown): AnalysisCitationSource[] {
+  return Array.isArray(value)
+    ? value
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const candidate = item as Record<string, unknown>;
+          const id = typeof candidate.id === "number" ? candidate.id : Number(candidate.id);
+          const title = sanitizeText(candidate.title, 240);
+
+          if (!Number.isInteger(id) || id <= 0 || id > 999 || !title) {
+            return null;
+          }
+
+          return {
+            id,
+            title,
+            source: sanitizeText(candidate.source, 120) || "Unknown",
+            publishedAt: sanitizeText(candidate.publishedAt, 120),
+            url: sanitizeText(candidate.url, 600),
+            scope: sanitizeText(candidate.scope, 32),
+          };
+        })
+        .filter((item): item is AnalysisCitationSource => Boolean(item))
+        .slice(0, 12)
+    : [];
+}
+
 function parseResultPayload(value: unknown): WatchlistContractGptResult | null {
   if (!value) {
     return null;
@@ -130,6 +225,10 @@ function parseResultPayload(value: unknown): WatchlistContractGptResult | null {
       geopoliticalTake: sanitizeText(parsed.geopoliticalTake, 700),
       actionPlan: sanitizeText(parsed.actionPlan, 900),
       rationale: sanitizeText(parsed.rationale, 1800),
+      warnings: sanitizeStringArray(parsed.warnings, 12, 120),
+      verifiedFindings: sanitizeVerifiedFindings(parsed.verifiedFindings),
+      unverifiedModelContext: sanitizeUnverifiedContext(parsed.unverifiedModelContext),
+      sources: sanitizeSources(parsed.sources),
       companyHeadlines: sanitizeHeadlineArray(parsed.companyHeadlines),
       marketHeadlines: sanitizeHeadlineArray(parsed.marketHeadlines),
     };
