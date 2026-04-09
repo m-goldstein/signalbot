@@ -6,7 +6,7 @@ import {
   writeCachedOpenInsiderAnalysis,
 } from "@/lib/client/analysis-cache";
 import { isTradingSessionOpen } from "@/lib/client/market-session";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { OpenInsiderGptResponse, OpenInsiderResponse } from "@/lib/openinsider/types";
 import { SimpleBarChart } from "@/components/simple-bar-chart";
 import { SimpleLineChart } from "@/components/simple-line-chart";
@@ -60,6 +60,15 @@ export function OpenInsiderDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisTopN, setAnalysisTopN] = useState("5");
+  const [collapsedTables, setCollapsedTables] = useState({
+    gpt: false,
+    tickerSummary: false,
+    insiderSummary: false,
+    relationshipSummary: false,
+    researchBriefs: false,
+    rawTrades: false,
+  });
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const analysisQueryKey = useMemo(
     () => createAnalysisQueryKey(["openinsider", symbol.trim().toUpperCase(), side, count, analysisTopN]),
     [analysisTopN, count, side, symbol],
@@ -205,6 +214,28 @@ export function OpenInsiderDashboard() {
     .sort((left, right) => right.distributionScore - left.distributionScore)
     .slice(0, 8);
 
+  function toggleTable(key: keyof typeof collapsedTables) {
+    setCollapsedTables((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  }
+
+  function toggleRow(key: string) {
+    setExpandedRows((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  }
+
+  const sectionHeaderStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 } as const;
+  const collapseButtonStyle = { minHeight: 36, padding: "0 12px", border: "1px solid #d1d5db", background: "#fff", font: "inherit", color: "#111827" } as const;
+  const rowToggleButtonStyle = { minHeight: 30, padding: "0 10px", border: "1px solid #d1d5db", background: "#fff", font: "inherit", color: "#111827" } as const;
+  const detailCellStyle = { padding: 0, background: "#f8fafc" } as const;
+  const detailWrapStyle = { display: "grid", gap: 14, padding: 16, color: "#1f2937", lineHeight: 1.6 } as const;
+  const detailGridStyle = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 } as const;
+  const detailLabelStyle = { color: "#6b7280", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" } as const;
+
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <section style={{ display: "grid", gap: 12, border: "1px solid #d1d5db", padding: 16, background: "#fff" }}>
@@ -291,40 +322,80 @@ export function OpenInsiderDashboard() {
 
       {gptData ? (
         <section style={{ border: "1px solid #d1d5db", padding: 16, background: "#fff", overflowX: "auto" }}>
-          <h2 style={{ marginBottom: 12 }}>GPT analysis</h2>
-          <p style={{ color: "#4b5563", marginBottom: 12 }}>
-            Model: {gptData.model} | symbols analyzed: {gptData.results.length}
-          </p>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th align="left">Symbol</th>
-                <th align="left">Signal</th>
-                <th align="left">Quality</th>
-                <th align="left">Direction</th>
-                <th align="right">Confidence</th>
-                <th align="left">Summary</th>
-                <th align="left">Drivers</th>
-                <th align="left">Risks</th>
-                <th align="left">Rationale</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gptData.results.map((entry) => (
-                <tr key={entry.symbol}>
-                  <td>{entry.symbol}</td>
-                  <td>{entry.insiderSignal}</td>
-                  <td>{entry.quality}</td>
-                  <td>{entry.direction}</td>
-                  <td align="right">{entry.confidence.toFixed(2)}</td>
-                  <td>{entry.researchSummary}</td>
-                  <td>{entry.keyDrivers.join("; ")}</td>
-                  <td>{entry.riskFlags.join("; ")}</td>
-                  <td>{entry.rationale}</td>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={{ margin: 0 }}>GPT analysis</h2>
+              <p style={{ color: "#4b5563", margin: "8px 0 0" }}>
+                Model: {gptData.model} | symbols analyzed: {gptData.results.length}
+              </p>
+            </div>
+            <button type="button" style={collapseButtonStyle} aria-expanded={!collapsedTables.gpt} onClick={() => toggleTable("gpt")}>
+              {collapsedTables.gpt ? "Expand table" : "Collapse table"}
+            </button>
+          </div>
+          {collapsedTables.gpt ? null : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th align="left">View</th>
+                  <th align="left">Symbol</th>
+                  <th align="left">Signal</th>
+                  <th align="left">Quality</th>
+                  <th align="left">Direction</th>
+                  <th align="right">Confidence</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {gptData.results.map((entry) => {
+                  const rowKey = `gpt-${entry.symbol}`;
+                  const isExpanded = expandedRows[rowKey] ?? false;
+
+                  return (
+                    <Fragment key={rowKey}>
+                      <tr>
+                        <td>
+                          <button type="button" style={rowToggleButtonStyle} aria-expanded={isExpanded} onClick={() => toggleRow(rowKey)}>
+                            {isExpanded ? "Hide" : "Show"}
+                          </button>
+                        </td>
+                        <td>{entry.symbol}</td>
+                        <td>{entry.insiderSignal}</td>
+                        <td>{entry.quality}</td>
+                        <td>{entry.direction}</td>
+                        <td align="right">{entry.confidence.toFixed(2)}</td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr>
+                          <td colSpan={6} style={detailCellStyle}>
+                            <div style={detailWrapStyle}>
+                              <div>
+                                <div style={detailLabelStyle}>Summary</div>
+                                <div>{entry.researchSummary}</div>
+                              </div>
+                              <div style={detailGridStyle}>
+                                <div>
+                                  <div style={detailLabelStyle}>Drivers</div>
+                                  <div>{entry.keyDrivers.join("; ") || "-"}</div>
+                                </div>
+                                <div>
+                                  <div style={detailLabelStyle}>Risks</div>
+                                  <div>{entry.riskFlags.join("; ") || "-"}</div>
+                                </div>
+                              </div>
+                              <div>
+                                <div style={detailLabelStyle}>Rationale</div>
+                                <div>{entry.rationale}</div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </section>
       ) : null}
 
@@ -361,148 +432,312 @@ export function OpenInsiderDashboard() {
 
       <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <div style={{ border: "1px solid #d1d5db", padding: 16, background: "#fff", overflowX: "auto" }}>
-          <h2 style={{ marginBottom: 12 }}>Ticker summary</h2>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th align="left">Ticker</th>
-                <th align="left">Bias</th>
-                <th align="right">Buy</th>
-                <th align="right">Sell</th>
-                <th align="right">Net</th>
-                <th align="right">Insiders</th>
-                <th align="right">Ratio</th>
-              </tr>
-            </thead>
-            <tbody>
-              {topTickers.map((entry) => (
-                <tr key={entry.ticker}>
-                  <td>{entry.ticker}</td>
-                  <td>{formatBias(entry.activityBias)}</td>
-                  <td align="right">{formatMoney(entry.buyValue)}</td>
-                  <td align="right">{formatMoney(entry.sellValue)}</td>
-                  <td align="right">{formatMoney(entry.netValue)}</td>
-                  <td align="right">{entry.uniqueInsiderCount}</td>
-                  <td align="right">{formatRatio(entry.buyToSellValueRatio)}</td>
+          <div style={sectionHeaderStyle}>
+            <h2 style={{ margin: 0 }}>Ticker summary</h2>
+            <button type="button" style={collapseButtonStyle} aria-expanded={!collapsedTables.tickerSummary} onClick={() => toggleTable("tickerSummary")}>
+              {collapsedTables.tickerSummary ? "Expand table" : "Collapse table"}
+            </button>
+          </div>
+          {collapsedTables.tickerSummary ? null : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th align="left">View</th>
+                  <th align="left">Ticker</th>
+                  <th align="left">Bias</th>
+                  <th align="right">Buy</th>
+                  <th align="right">Sell</th>
+                  <th align="right">Net</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {topTickers.map((entry) => {
+                  const rowKey = `ticker-${entry.ticker}`;
+                  const isExpanded = expandedRows[rowKey] ?? false;
+
+                  return (
+                    <Fragment key={rowKey}>
+                      <tr>
+                        <td>
+                          <button type="button" style={rowToggleButtonStyle} aria-expanded={isExpanded} onClick={() => toggleRow(rowKey)}>
+                            {isExpanded ? "Hide" : "Show"}
+                          </button>
+                        </td>
+                        <td>{entry.ticker}</td>
+                        <td>{formatBias(entry.activityBias)}</td>
+                        <td align="right">{formatMoney(entry.buyValue)}</td>
+                        <td align="right">{formatMoney(entry.sellValue)}</td>
+                        <td align="right">{formatMoney(entry.netValue)}</td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr>
+                          <td colSpan={6} style={detailCellStyle}>
+                            <div style={detailWrapStyle}>
+                              <div style={detailGridStyle}>
+                                <div>
+                                  <div style={detailLabelStyle}>Unique insiders</div>
+                                  <div>{entry.uniqueInsiderCount}</div>
+                                </div>
+                                <div>
+                                  <div style={detailLabelStyle}>Buy / sell ratio</div>
+                                  <div>{formatRatio(entry.buyToSellValueRatio)}</div>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
         <div style={{ border: "1px solid #d1d5db", padding: 16, background: "#fff", overflowX: "auto" }}>
-          <h2 style={{ marginBottom: 12 }}>Insider summary</h2>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th align="left">Insider</th>
-                <th align="left">Role</th>
-                <th align="right">Tickers</th>
-                <th align="right">Net</th>
-                <th align="right">Trades</th>
-              </tr>
-            </thead>
-            <tbody>
-              {topInsiders.map((entry) => (
-                <tr key={`${entry.insider}-${entry.relationship}`}>
-                  <td>{entry.insider}</td>
-                  <td>{entry.relationship}</td>
-                  <td align="right">{entry.uniqueTickerCount}</td>
-                  <td align="right">{formatMoney(entry.netValue)}</td>
-                  <td align="right">{entry.tradeCount}</td>
+          <div style={sectionHeaderStyle}>
+            <h2 style={{ margin: 0 }}>Insider summary</h2>
+            <button type="button" style={collapseButtonStyle} aria-expanded={!collapsedTables.insiderSummary} onClick={() => toggleTable("insiderSummary")}>
+              {collapsedTables.insiderSummary ? "Expand table" : "Collapse table"}
+            </button>
+          </div>
+          {collapsedTables.insiderSummary ? null : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th align="left">View</th>
+                  <th align="left">Insider</th>
+                  <th align="left">Role</th>
+                  <th align="right">Net</th>
+                  <th align="right">Trades</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {topInsiders.map((entry) => {
+                  const rowKey = `insider-${entry.insider}-${entry.relationship}`;
+                  const isExpanded = expandedRows[rowKey] ?? false;
+
+                  return (
+                    <Fragment key={rowKey}>
+                      <tr>
+                        <td>
+                          <button type="button" style={rowToggleButtonStyle} aria-expanded={isExpanded} onClick={() => toggleRow(rowKey)}>
+                            {isExpanded ? "Hide" : "Show"}
+                          </button>
+                        </td>
+                        <td>{entry.insider}</td>
+                        <td>{entry.relationship}</td>
+                        <td align="right">{formatMoney(entry.netValue)}</td>
+                        <td align="right">{entry.tradeCount}</td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr>
+                          <td colSpan={5} style={detailCellStyle}>
+                            <div style={detailWrapStyle}>
+                              <div>
+                                <div style={detailLabelStyle}>Unique tickers</div>
+                                <div>{entry.uniqueTickerCount}</div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </section>
 
       <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <div style={{ border: "1px solid #d1d5db", padding: 16, background: "#fff", overflowX: "auto" }}>
-          <h2 style={{ marginBottom: 12 }}>Relationship summary</h2>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th align="left">Role</th>
-                <th align="right">Net</th>
-                <th align="right">Trades</th>
-                <th align="right">Insiders</th>
-                <th align="right">Tickers</th>
-              </tr>
-            </thead>
-            <tbody>
-              {topRelationships.map((entry) => (
-                <tr key={entry.relationship}>
-                  <td>{entry.relationship}</td>
-                  <td align="right">{formatMoney(entry.netValue)}</td>
-                  <td align="right">{entry.tradeCount}</td>
-                  <td align="right">{entry.uniqueInsiderCount}</td>
-                  <td align="right">{entry.uniqueTickerCount}</td>
+          <div style={sectionHeaderStyle}>
+            <h2 style={{ margin: 0 }}>Relationship summary</h2>
+            <button type="button" style={collapseButtonStyle} aria-expanded={!collapsedTables.relationshipSummary} onClick={() => toggleTable("relationshipSummary")}>
+              {collapsedTables.relationshipSummary ? "Expand table" : "Collapse table"}
+            </button>
+          </div>
+          {collapsedTables.relationshipSummary ? null : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th align="left">View</th>
+                  <th align="left">Role</th>
+                  <th align="right">Net</th>
+                  <th align="right">Trades</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {topRelationships.map((entry) => {
+                  const rowKey = `relationship-${entry.relationship}`;
+                  const isExpanded = expandedRows[rowKey] ?? false;
+
+                  return (
+                    <Fragment key={rowKey}>
+                      <tr>
+                        <td>
+                          <button type="button" style={rowToggleButtonStyle} aria-expanded={isExpanded} onClick={() => toggleRow(rowKey)}>
+                            {isExpanded ? "Hide" : "Show"}
+                          </button>
+                        </td>
+                        <td>{entry.relationship}</td>
+                        <td align="right">{formatMoney(entry.netValue)}</td>
+                        <td align="right">{entry.tradeCount}</td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr>
+                          <td colSpan={4} style={detailCellStyle}>
+                            <div style={detailWrapStyle}>
+                              <div style={detailGridStyle}>
+                                <div>
+                                  <div style={detailLabelStyle}>Unique insiders</div>
+                                  <div>{entry.uniqueInsiderCount}</div>
+                                </div>
+                                <div>
+                                  <div style={detailLabelStyle}>Unique tickers</div>
+                                  <div>{entry.uniqueTickerCount}</div>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
         <div style={{ border: "1px solid #d1d5db", padding: 16, background: "#fff", overflowX: "auto" }}>
-          <h2 style={{ marginBottom: 12 }}>Ticker research briefs</h2>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th align="left">Ticker</th>
-                <th align="left">Bias</th>
-                <th align="right">Acc</th>
-                <th align="right">Dist</th>
-                <th align="right">Cluster</th>
-                <th align="left">Summary</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickerResearch.map((entry) => (
-                <tr key={entry.ticker}>
-                  <td>{entry.ticker}</td>
-                  <td>{formatBias(entry.activityBias)}</td>
-                  <td align="right">{entry.accumulationScore.toFixed(1)}</td>
-                  <td align="right">{entry.distributionScore.toFixed(1)}</td>
-                  <td align="right">{entry.clusterScore.toFixed(2)}</td>
-                  <td>{entry.analysisSummary}</td>
+          <div style={sectionHeaderStyle}>
+            <h2 style={{ margin: 0 }}>Ticker research briefs</h2>
+            <button type="button" style={collapseButtonStyle} aria-expanded={!collapsedTables.researchBriefs} onClick={() => toggleTable("researchBriefs")}>
+              {collapsedTables.researchBriefs ? "Expand table" : "Collapse table"}
+            </button>
+          </div>
+          {collapsedTables.researchBriefs ? null : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th align="left">View</th>
+                  <th align="left">Ticker</th>
+                  <th align="left">Bias</th>
+                  <th align="right">Acc</th>
+                  <th align="right">Dist</th>
+                  <th align="right">Cluster</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {tickerResearch.map((entry) => {
+                  const rowKey = `research-${entry.ticker}`;
+                  const isExpanded = expandedRows[rowKey] ?? false;
+
+                  return (
+                    <Fragment key={rowKey}>
+                      <tr>
+                        <td>
+                          <button type="button" style={rowToggleButtonStyle} aria-expanded={isExpanded} onClick={() => toggleRow(rowKey)}>
+                            {isExpanded ? "Hide" : "Show"}
+                          </button>
+                        </td>
+                        <td>{entry.ticker}</td>
+                        <td>{formatBias(entry.activityBias)}</td>
+                        <td align="right">{entry.accumulationScore.toFixed(1)}</td>
+                        <td align="right">{entry.distributionScore.toFixed(1)}</td>
+                        <td align="right">{entry.clusterScore.toFixed(2)}</td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr>
+                          <td colSpan={6} style={detailCellStyle}>
+                            <div style={detailWrapStyle}>
+                              <div>
+                                <div style={detailLabelStyle}>Summary</div>
+                                <div>{entry.analysisSummary}</div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </section>
 
       <section style={{ border: "1px solid #d1d5db", padding: 16, background: "#fff", overflowX: "auto" }}>
-        <h2 style={{ marginBottom: 12 }}>Raw trades</h2>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono), monospace", fontSize: 13 }}>
-          <thead>
-            <tr>
-              <th align="left">Date</th>
-              <th align="left">Ticker</th>
-              <th align="left">Insider</th>
-              <th align="left">Role</th>
-              <th align="left">Type</th>
-              <th align="right">Shares</th>
-              <th align="right">Price</th>
-              <th align="right">Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(data?.trades.slice(0, 50) ?? []).map((trade, index) => (
-              <tr key={`${trade.ticker}-${trade.date}-${index}`}>
-                <td>{trade.date}</td>
-                <td>{trade.ticker}</td>
-                <td>{trade.insider}</td>
-                <td>{trade.relationship}</td>
-                <td>{trade.transactionType}</td>
-                <td align="right">{trade.shares.toLocaleString()}</td>
-                <td align="right">{trade.averagePrice.toFixed(2)}</td>
-                <td align="right">{formatMoney(trade.value)}</td>
+        <div style={sectionHeaderStyle}>
+          <h2 style={{ margin: 0 }}>Raw trades</h2>
+          <button type="button" style={collapseButtonStyle} aria-expanded={!collapsedTables.rawTrades} onClick={() => toggleTable("rawTrades")}>
+            {collapsedTables.rawTrades ? "Expand table" : "Collapse table"}
+          </button>
+        </div>
+        {collapsedTables.rawTrades ? null : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono), monospace", fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th align="left">View</th>
+                <th align="left">Date</th>
+                <th align="left">Ticker</th>
+                <th align="left">Insider</th>
+                <th align="left">Type</th>
+                <th align="right">Value</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {(data?.trades.slice(0, 50) ?? []).map((trade, index) => {
+                const rowKey = `trade-${trade.ticker}-${trade.date}-${index}`;
+                const isExpanded = expandedRows[rowKey] ?? false;
+
+                return (
+                  <Fragment key={rowKey}>
+                    <tr>
+                      <td>
+                        <button type="button" style={rowToggleButtonStyle} aria-expanded={isExpanded} onClick={() => toggleRow(rowKey)}>
+                          {isExpanded ? "Hide" : "Show"}
+                        </button>
+                      </td>
+                      <td>{trade.date}</td>
+                      <td>{trade.ticker}</td>
+                      <td>{trade.insider}</td>
+                      <td>{trade.transactionType}</td>
+                      <td align="right">{formatMoney(trade.value)}</td>
+                    </tr>
+                    {isExpanded ? (
+                      <tr>
+                        <td colSpan={6} style={detailCellStyle}>
+                          <div style={detailWrapStyle}>
+                            <div style={detailGridStyle}>
+                              <div>
+                                <div style={detailLabelStyle}>Role</div>
+                                <div>{trade.relationship}</div>
+                              </div>
+                              <div>
+                                <div style={detailLabelStyle}>Shares</div>
+                                <div>{trade.shares.toLocaleString()}</div>
+                              </div>
+                              <div>
+                                <div style={detailLabelStyle}>Average price</div>
+                                <div>{trade.averagePrice.toFixed(2)}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </section>
     </div>
   );

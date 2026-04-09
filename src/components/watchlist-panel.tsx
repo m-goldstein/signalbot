@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./contract-watchlist-button.module.css";
 import {
   CONTRACT_WATCHLIST_EVENT,
@@ -36,6 +36,8 @@ export function WatchlistPanel() {
   const [jobs, setJobs] = useState<WatchlistJobState[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAnalysisCollapsed, setIsAnalysisCollapsed] = useState(false);
+  const [expandedAnalysisRows, setExpandedAnalysisRows] = useState<Record<string, boolean>>({});
   const entriesRef = useRef<ContractWatchlistEntry[]>([]);
   const jobsRef = useRef<WatchlistJobState[]>([]);
 
@@ -303,139 +305,170 @@ export function WatchlistPanel() {
       {(results.length || pendingJobs.length) ? (
         <section className={styles.analysisSection}>
           <div className={styles.analysisHeader}>
-            <strong>GPT contract analysis</strong>
-            <span>
-              Model: {modelUsed ?? "pending"} | completed: {results.length} | pending: {pendingJobs.length}
-            </span>
+            <div className={styles.analysisHeaderText}>
+              <strong>GPT contract analysis</strong>
+              <span>
+                Model: {modelUsed ?? "pending"} | completed: {results.length} | pending: {pendingJobs.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              className={styles.collapseButton}
+              aria-expanded={!isAnalysisCollapsed}
+              onClick={() => setIsAnalysisCollapsed((current) => !current)}
+            >
+              {isAnalysisCollapsed ? "Expand table" : "Collapse table"}
+            </button>
           </div>
-          <div className={styles.pageTableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Underlying</th>
-                  <th>Contract</th>
-                  <th>Decision</th>
-                  <th>Bias</th>
-                  <th>Confidence</th>
-                  <th>Judgment</th>
-                  <th>Positive catalysts</th>
-                  <th>Negative catalysts</th>
-                  <th>Insider / geopolitical</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedEntries.map((savedEntry) => {
-                  const job = statusForSymbol(savedEntry.symbol);
-                  const entry = job?.result;
-                  const companyHeadlines = entry?.companyHeadlines ?? [];
-                  const marketHeadlines = entry?.marketHeadlines ?? [];
-                  const positiveCatalysts = entry?.positiveCatalysts ?? [];
-                  const negativeCatalysts = entry?.negativeCatalysts ?? [];
-                  const publishedAt = companyHeadlines[0]?.publishedAt || job?.requestedAt || "";
+          {isAnalysisCollapsed ? null : (
+            <div className={styles.pageTableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>View</th>
+                    <th>Underlying</th>
+                    <th>Contract</th>
+                    <th>Decision</th>
+                    <th>Bias</th>
+                    <th>Confidence</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedEntries.map((savedEntry) => {
+                    const job = statusForSymbol(savedEntry.symbol);
+                    const entry = job?.result;
+                    const companyHeadlines = entry?.companyHeadlines ?? [];
+                    const marketHeadlines = entry?.marketHeadlines ?? [];
+                    const positiveCatalysts = entry?.positiveCatalysts ?? [];
+                    const negativeCatalysts = entry?.negativeCatalysts ?? [];
+                    const publishedAt = companyHeadlines[0]?.publishedAt || job?.requestedAt || "";
+                    const rowKey = `analysis-${savedEntry.symbol}`;
+                    const isExpanded = expandedAnalysisRows[rowKey] ?? false;
 
-                  return (
-                    <tr key={`analysis-${savedEntry.symbol}`}>
-                      <td>{savedEntry.underlyingSymbol}</td>
-                      <td className={styles.analysisContract}>
-                        <strong>{savedEntry.symbol}</strong>
-                        <span>{publishedAt}</span>
-                      </td>
-                      <td>{entry?.pursueDecision ?? (job?.status === "failed" ? "FAILED" : job?.status ?? "pending")}</td>
-                      <td>
-                        {entry ? (
-                          <div className={styles.biasCell}>
-                            <span>ST: {entry.shortTermBias}</span>
-                            <span>LT: {entry.longTermBias}</span>
-                          </div>
-                        ) : (
-                          <span className={styles.pendingCell}>
-                            {job?.status === "running" ? "Analysis in progress..." : job?.status === "queued" ? "Queued..." : job?.status === "failed" ? "Failed" : "Not requested"}
-                          </span>
-                        )}
-                      </td>
-                      <td>{entry ? `${(entry.confidence * 100).toFixed(0)}%` : "-"}</td>
-                      <td className={styles.analysisText}>
-                        {entry ? (
-                          <>
-                            <strong>{entry.contractJudgment}</strong>
-                            {entry.warnings.length ? <span>Warnings: {entry.warnings.join("; ")}</span> : null}
-                            <span>{entry.thesisSummary}</span>
-                            <span>{entry.rationale}</span>
-                            {entry.verifiedFindings.length ? (
-                              <span>
-                                Verified: {entry.verifiedFindings.map((item) => `${item.claim} [${item.citations.join(",")}]`).join(" | ")}
+                    return (
+                      <Fragment key={rowKey}>
+                        <tr key={rowKey}>
+                          <td>
+                            <button
+                              type="button"
+                              className={styles.rowToggleButton}
+                              aria-expanded={isExpanded}
+                              onClick={() =>
+                                setExpandedAnalysisRows((current) => ({
+                                  ...current,
+                                  [rowKey]: !current[rowKey],
+                                }))
+                              }
+                            >
+                              {isExpanded ? "Hide" : "Show"}
+                            </button>
+                          </td>
+                          <td>{savedEntry.underlyingSymbol}</td>
+                          <td className={styles.analysisContract}>
+                            <strong>{savedEntry.symbol}</strong>
+                            <span>{publishedAt}</span>
+                          </td>
+                          <td>{entry?.pursueDecision ?? (job?.status === "failed" ? "FAILED" : job?.status ?? "pending")}</td>
+                          <td>
+                            {entry ? (
+                              <div className={styles.biasCell}>
+                                <span>ST: {entry.shortTermBias}</span>
+                                <span>LT: {entry.longTermBias}</span>
+                              </div>
+                            ) : (
+                              <span className={styles.pendingCell}>
+                                {job?.status === "running" ? "Analysis in progress..." : job?.status === "queued" ? "Queued..." : job?.status === "failed" ? "Failed" : "Not requested"}
                               </span>
-                            ) : null}
-                            {entry.unverifiedModelContext.length ? (
-                              <span>
-                                Unverified model context: {entry.unverifiedModelContext.map((item) => `${item.claim} (${item.confidence})`).join(" | ")}
-                              </span>
-                            ) : null}
-                          </>
-                        ) : (
-                          <span>{job?.errorMessage || "Waiting for completed analysis."}</span>
-                        )}
-                      </td>
-                      <td className={styles.listCell}>
-                        {positiveCatalysts.length ? (
-                          <ul>
-                            {positiveCatalysts.map((item) => (
-                              <li key={`${savedEntry.symbol}-pos-${item}`}>{item}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <span>{entry ? "None highlighted." : "-"}</span>
-                        )}
-                      </td>
-                      <td className={styles.listCell}>
-                        {negativeCatalysts.length ? (
-                          <ul>
-                            {negativeCatalysts.map((item) => (
-                              <li key={`${savedEntry.symbol}-neg-${item}`}>{item}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <span>{entry ? "None highlighted." : "-"}</span>
-                        )}
-                      </td>
-                      <td className={styles.analysisText}>
-                        {entry ? (
-                          <>
-                            <strong>Insider</strong>
-                            <span>{entry.insiderTake}</span>
-                            <strong>Geopolitical</strong>
-                            <span>{entry.geopoliticalTake}</span>
-                          </>
-                        ) : (
-                          <span>-</span>
-                        )}
-                      </td>
-                      <td className={styles.analysisText}>
-                        {entry ? (
-                          <>
-                            <strong>{entry.actionPlan}</strong>
-                            {companyHeadlines.length ? (
-                              <span>
-                                Company news: {companyHeadlines.slice(0, 2).map((headline) => headline.title).join(" | ")}
-                              </span>
-                            ) : null}
-                            {marketHeadlines.length ? (
-                              <span>
-                                Market context: {marketHeadlines.slice(0, 2).map((headline) => headline.title).join(" | ")}
-                              </span>
-                            ) : null}
-                          </>
-                        ) : (
-                          <span>-</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            )}
+                          </td>
+                          <td>{entry ? `${(entry.confidence * 100).toFixed(0)}%` : "-"}</td>
+                          <td>{entry?.actionPlan ?? "-"}</td>
+                        </tr>
+                        {isExpanded ? (
+                          <tr key={`${rowKey}-detail`} className={styles.analysisDetailRow}>
+                            <td colSpan={7} className={styles.analysisDetailCell}>
+                              <div className={styles.analysisDetailGrid}>
+                                <div className={styles.analysisText}>
+                                  {entry ? (
+                                    <>
+                                      <strong>{entry.contractJudgment}</strong>
+                                      {entry.warnings.length ? <span>Warnings: {entry.warnings.join("; ")}</span> : null}
+                                      <span>{entry.thesisSummary}</span>
+                                      <span>{entry.rationale}</span>
+                                      {entry.verifiedFindings.length ? (
+                                        <span>
+                                          Verified: {entry.verifiedFindings.map((item) => `${item.claim} [${item.citations.join(",")}]`).join(" | ")}
+                                        </span>
+                                      ) : null}
+                                      {entry.unverifiedModelContext.length ? (
+                                        <span>
+                                          Unverified model context: {entry.unverifiedModelContext.map((item) => `${item.claim} (${item.confidence})`).join(" | ")}
+                                        </span>
+                                      ) : null}
+                                    </>
+                                  ) : (
+                                    <span>{job?.errorMessage || "Waiting for completed analysis."}</span>
+                                  )}
+                                </div>
+                                <div className={styles.analysisDetailColumns}>
+                                  <div className={styles.listCell}>
+                                    <strong>Positive catalysts</strong>
+                                    {positiveCatalysts.length ? (
+                                      <ul>
+                                        {positiveCatalysts.map((item) => (
+                                          <li key={`${savedEntry.symbol}-pos-${item}`}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <span>{entry ? "None highlighted." : "-"}</span>
+                                    )}
+                                  </div>
+                                  <div className={styles.listCell}>
+                                    <strong>Negative catalysts</strong>
+                                    {negativeCatalysts.length ? (
+                                      <ul>
+                                        {negativeCatalysts.map((item) => (
+                                          <li key={`${savedEntry.symbol}-neg-${item}`}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <span>{entry ? "None highlighted." : "-"}</span>
+                                    )}
+                                  </div>
+                                  <div className={styles.analysisText}>
+                                    <strong>Insider</strong>
+                                    <span>{entry?.insiderTake ?? "-"}</span>
+                                    <strong>Geopolitical</strong>
+                                    <span>{entry?.geopoliticalTake ?? "-"}</span>
+                                  </div>
+                                  <div className={styles.analysisText}>
+                                    <strong>Headlines</strong>
+                                    {companyHeadlines.length ? (
+                                      <span>
+                                        Company news: {companyHeadlines.slice(0, 2).map((headline) => headline.title).join(" | ")}
+                                      </span>
+                                    ) : null}
+                                    {marketHeadlines.length ? (
+                                      <span>
+                                        Market context: {marketHeadlines.slice(0, 2).map((headline) => headline.title).join(" | ")}
+                                      </span>
+                                    ) : (
+                                      <span>{companyHeadlines.length ? "" : "-"}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       ) : null}
     </section>

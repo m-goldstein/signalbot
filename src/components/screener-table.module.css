@@ -122,6 +122,34 @@
   gap: 12px;
 }
 
+.analysisHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.collapseButton,
+.rowToggleButton {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  cursor: pointer;
+}
+
+.collapseButton {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.rowToggleButton {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
 .sectionActions {
   display: flex;
   justify-content: flex-start;
@@ -296,6 +324,11 @@
   letter-spacing: 0.12em;
 }
 
+.analysisTable th:first-child,
+.analysisTable td:first-child {
+  width: 76px;
+}
+
 .analysisSymbol {
   width: 88px;
   font-family: var(--font-mono), monospace;
@@ -314,6 +347,34 @@
   overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.6;
+}
+
+.analysisDetailRow {
+  background: #f8fafc;
+}
+
+.analysisDetailCell {
+  padding: 0 !important;
+}
+
+.analysisDetailGrid {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.analysisDetailGrid p {
+  margin: 4px 0 0;
+  color: #1f2937;
+  line-height: 1.6;
+}
+
+.analysisDetailLabel {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .meta article {
@@ -636,6 +697,12 @@
   gap: 12px;
 }
 
+.topPicksHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .topPicksEyebrow {
   margin: 0;
   color: #1d4ed8;
@@ -731,6 +798,11 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   white-space: nowrap;
+}
+
+.topPicksTable th:first-child,
+.topPicksTable td:first-child {
+  width: 76px;
 }
 
 .topPicksCallRow {
@@ -866,6 +938,11 @@
   }
 
   .sectionHeader {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .analysisHeaderRow {
     align-items: start;
     flex-direction: column;
   }

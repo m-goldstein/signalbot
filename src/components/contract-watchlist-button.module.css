@@ -202,6 +202,31 @@
   font-size: 14px;
 }
 
+.analysisHeaderText {
+  display: grid;
+  gap: 4px;
+}
+
+.collapseButton,
+.rowToggleButton {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+
+.collapseButton {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.rowToggleButton {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
 .analysisContract,
 .analysisText {
   white-space: normal;
@@ -251,11 +276,40 @@
   font-size: 14px;
 }
 
+.analysisDetailRow {
+  background: #f8fafc;
+}
+
+.analysisDetailCell {
+  padding: 0 !important;
+}
+
+.analysisDetailGrid {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.analysisDetailColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
 @media (max-width: 720px) {
   .popup {
     right: 50%;
     transform: translateX(50%);
     width: calc(100vw - 24px);
+  }
+
+  .analysisHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .analysisDetailColumns {
+    grid-template-columns: 1fr;
   }
 
   .pageHeader {

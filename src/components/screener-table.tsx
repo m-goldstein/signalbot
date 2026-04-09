@@ -342,6 +342,12 @@ export function ScreenerTable({
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [topPicks, setTopPicks] = useState<TopPicksGptResult | null>(null);
   const [isAnalyzingTopPicks, setIsAnalyzingTopPicks] = useState(false);
+  const [collapsedAnalysisSections, setCollapsedAnalysisSections] = useState({
+    topPicks: false,
+    screener: false,
+  });
+  const [expandedTopPickRows, setExpandedTopPickRows] = useState<Record<string, boolean>>({});
+  const [expandedScreenerAnalysisRows, setExpandedScreenerAnalysisRows] = useState<Record<string, boolean>>({});
   const loadInFlightRef = useRef(false);
   const hasLoadedRowsRef = useRef(false);
   const rowsRef = useRef<ScreenerRow[]>([]);
@@ -1100,99 +1106,153 @@ export function ScreenerTable({
               <p className={styles.topPicksEyebrow}>AI Options Recommendations</p>
               <h2 className={styles.topPicksTitle}>Top 10 options picks for {topPicks.asOf}{topPicks.model ? ` · ${topPicks.model}` : ""}</h2>
             </div>
-            <button
-              type="button"
-              className={styles.topPicksDismiss}
-              aria-label="Dismiss top picks"
-              onClick={() => setTopPicks(null)}
-            >
-              ×
-            </button>
-          </div>
-
-          {topPicks.macroContext || topPicks.warnings.length || topPicks.verifiedFindings.length || topPicks.unverifiedModelContext.length ? (
-            <div className={styles.topPicksMacro}>
-              <p className={styles.topPicksSectionLabel}>Macro context</p>
-              {topPicks.macroContext ? <p className={styles.topPicksMacroText}>{topPicks.macroContext}</p> : null}
-              {topPicks.warnings.length ? <p className={styles.topPicksMacroText}>Warnings: {topPicks.warnings.join("; ")}</p> : null}
-              {topPicks.verifiedFindings.length ? (
-                <p className={styles.topPicksMacroText}>
-                  Verified findings: {topPicks.verifiedFindings.map((item) => `${item.claim} [${item.citations.join(",")}]`).join(" | ")}
-                </p>
-              ) : null}
-              {topPicks.unverifiedModelContext.length ? (
-                <p className={styles.topPicksMacroText}>
-                  Unverified model context: {topPicks.unverifiedModelContext.map((item) => `${item.claim} (${item.confidence})`).join(" | ")}
-                </p>
-              ) : null}
+            <div className={styles.topPicksHeaderActions}>
+              <button
+                type="button"
+                className={styles.collapseButton}
+                aria-expanded={!collapsedAnalysisSections.topPicks}
+                onClick={() =>
+                  setCollapsedAnalysisSections((current) => ({
+                    ...current,
+                    topPicks: !current.topPicks,
+                  }))
+                }
+              >
+                {collapsedAnalysisSections.topPicks ? "Expand table" : "Collapse table"}
+              </button>
+              <button
+                type="button"
+                className={styles.topPicksDismiss}
+                aria-label="Dismiss top picks"
+                onClick={() => setTopPicks(null)}
+              >
+                ×
+              </button>
             </div>
-          ) : null}
-
-          <div className={styles.topPicksSectors}>
-            {topPicks.sectorReadings.tech ? (
-              <div className={styles.topPicksSectorCard}>
-                <p className={styles.topPicksSectionLabel}>Technology</p>
-                <p>{topPicks.sectorReadings.tech}</p>
-              </div>
-            ) : null}
-            {topPicks.sectorReadings.defense ? (
-              <div className={styles.topPicksSectorCard}>
-                <p className={styles.topPicksSectionLabel}>Defense & Aerospace</p>
-                <p>{topPicks.sectorReadings.defense}</p>
-              </div>
-            ) : null}
-            {topPicks.sectorReadings.market ? (
-              <div className={styles.topPicksSectorCard}>
-                <p className={styles.topPicksSectionLabel}>Market / Benchmarks</p>
-                <p>{topPicks.sectorReadings.market}</p>
-              </div>
-            ) : null}
           </div>
 
-          <div className={styles.topPicksTableWrap}>
-            <table className={styles.topPicksTable}>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Symbol</th>
-                  <th>Type</th>
-                  <th>Structure</th>
-                  <th>Expiry</th>
-                  <th>Conf</th>
-                  <th>Rationale</th>
-                  <th>Key Risks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topPicks.picks.map((pick) => (
-                  <tr key={`${pick.rank}-${pick.symbol}`} className={pick.optionType === "call" ? styles.topPicksCallRow : styles.topPicksPutRow}>
-                    <td className={styles.topPicksRank}>{pick.rank}</td>
-                    <td>
-                      <div className={styles.topPicksSymbolCell}>
-                        <strong>{pick.symbol}</strong>
-                        <span>{pick.name}</span>
-                        <span className={styles.topPicksSection}>{pick.section}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={pick.optionType === "call" ? styles.topPicksCallBadge : styles.topPicksPutBadge}>
-                        {pick.optionType.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className={styles.topPicksStructure}>{pick.structure.replace("_", " ")}</td>
-                    <td className={styles.topPicksExpiry}>{pick.targetExpiry}</td>
-                    <td className={styles.topPicksConf}>{(pick.confidence * 100).toFixed(0)}%</td>
-                    <td className={styles.topPicksRationale}>{pick.rationale}</td>
-                    <td className={styles.topPicksRisks}>{pick.keyRisks}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {collapsedAnalysisSections.topPicks ? null : (
+            <>
+              {topPicks.macroContext || topPicks.warnings.length || topPicks.verifiedFindings.length || topPicks.unverifiedModelContext.length ? (
+                <div className={styles.topPicksMacro}>
+                  <p className={styles.topPicksSectionLabel}>Macro context</p>
+                  {topPicks.macroContext ? <p className={styles.topPicksMacroText}>{topPicks.macroContext}</p> : null}
+                  {topPicks.warnings.length ? <p className={styles.topPicksMacroText}>Warnings: {topPicks.warnings.join("; ")}</p> : null}
+                  {topPicks.verifiedFindings.length ? (
+                    <p className={styles.topPicksMacroText}>
+                      Verified findings: {topPicks.verifiedFindings.map((item) => `${item.claim} [${item.citations.join(",")}]`).join(" | ")}
+                    </p>
+                  ) : null}
+                  {topPicks.unverifiedModelContext.length ? (
+                    <p className={styles.topPicksMacroText}>
+                      Unverified model context: {topPicks.unverifiedModelContext.map((item) => `${item.claim} (${item.confidence})`).join(" | ")}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
-          <p className={styles.topPicksDisclaimer}>
-            AI-generated analysis only. Does not account for live IV, options chain liquidity, earnings dates, or bid/ask spreads. Not financial advice. Always verify with your broker before trading.
-          </p>
+              <div className={styles.topPicksSectors}>
+                {topPicks.sectorReadings.tech ? (
+                  <div className={styles.topPicksSectorCard}>
+                    <p className={styles.topPicksSectionLabel}>Technology</p>
+                    <p>{topPicks.sectorReadings.tech}</p>
+                  </div>
+                ) : null}
+                {topPicks.sectorReadings.defense ? (
+                  <div className={styles.topPicksSectorCard}>
+                    <p className={styles.topPicksSectionLabel}>Defense & Aerospace</p>
+                    <p>{topPicks.sectorReadings.defense}</p>
+                  </div>
+                ) : null}
+                {topPicks.sectorReadings.market ? (
+                  <div className={styles.topPicksSectorCard}>
+                    <p className={styles.topPicksSectionLabel}>Market / Benchmarks</p>
+                    <p>{topPicks.sectorReadings.market}</p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className={styles.topPicksTableWrap}>
+                <table className={styles.topPicksTable}>
+                  <thead>
+                    <tr>
+                      <th>View</th>
+                      <th>#</th>
+                      <th>Symbol</th>
+                      <th>Type</th>
+                      <th>Structure</th>
+                      <th>Expiry</th>
+                      <th>Conf</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topPicks.picks.map((pick) => {
+                      const pickKey = `${pick.rank}-${pick.symbol}`;
+                      const isExpanded = expandedTopPickRows[pickKey] ?? false;
+
+                      return (
+                        <Fragment key={pickKey}>
+                          <tr className={pick.optionType === "call" ? styles.topPicksCallRow : styles.topPicksPutRow}>
+                            <td>
+                              <button
+                                type="button"
+                                className={styles.rowToggleButton}
+                                aria-expanded={isExpanded}
+                                onClick={() =>
+                                  setExpandedTopPickRows((current) => ({
+                                    ...current,
+                                    [pickKey]: !current[pickKey],
+                                  }))
+                                }
+                              >
+                                {isExpanded ? "Hide" : "Show"}
+                              </button>
+                            </td>
+                            <td className={styles.topPicksRank}>{pick.rank}</td>
+                            <td>
+                              <div className={styles.topPicksSymbolCell}>
+                                <strong>{pick.symbol}</strong>
+                                <span>{pick.name}</span>
+                                <span className={styles.topPicksSection}>{pick.section}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <span className={pick.optionType === "call" ? styles.topPicksCallBadge : styles.topPicksPutBadge}>
+                                {pick.optionType.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className={styles.topPicksStructure}>{pick.structure.replace("_", " ")}</td>
+                            <td className={styles.topPicksExpiry}>{pick.targetExpiry}</td>
+                            <td className={styles.topPicksConf}>{(pick.confidence * 100).toFixed(0)}%</td>
+                          </tr>
+                          {isExpanded ? (
+                            <tr className={styles.analysisDetailRow}>
+                              <td colSpan={7} className={styles.analysisDetailCell}>
+                                <div className={styles.analysisDetailGrid}>
+                                  <div>
+                                    <span className={styles.analysisDetailLabel}>Rationale</span>
+                                    <p>{pick.rationale}</p>
+                                  </div>
+                                  <div>
+                                    <span className={styles.analysisDetailLabel}>Key risks</span>
+                                    <p>{pick.keyRisks}</p>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className={styles.topPicksDisclaimer}>
+                AI-generated analysis only. Does not account for live IV, options chain liquidity, earnings dates, or bid/ask spreads. Not financial advice. Always verify with your broker before trading.
+              </p>
+            </>
+          )}
         </div>
       ) : null}
 
@@ -1226,39 +1286,90 @@ export function ScreenerTable({
 
       {recentAnalysis ? (
         <div className={styles.analysisWrap}>
-          <h2>GPT screener analysis (gpt-5.4)</h2>
-          <div className={styles.analysisTableWrap}>
-            <table className={styles.analysisTable}>
-              <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Company</th>
-                <th>Segment</th>
-                <th>Completed</th>
-                <th>Direction</th>
-                <th>Confidence</th>
-                <th>Options</th>
-                <th>Judgment</th>
-                <th>Rationale</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentJobs.map((job) => (
-                <tr key={job.id}>
-                  <td className={styles.analysisSymbol}>{job.symbol}</td>
-                  <td>{job.rowName ?? "-"}</td>
-                  <td>{job.segment ? formatSegment(job.segment) : "-"}</td>
-                  <td>{job.completedAt ? new Date(job.completedAt).toLocaleString("en-US") : "-"}</td>
-                  <td>{job.result?.direction ?? "-"}</td>
-                  <td>{typeof job.result?.confidence === "number" ? job.result.confidence.toFixed(2) : "-"}</td>
-                  <td>{job.result?.optionsAction ?? "-"}</td>
-                  <td className={styles.analysisJudgment}>{job.result?.optionsJudgment ?? "-"}</td>
-                  <td className={styles.rationale}>{job.result?.rationale ?? "-"}</td>
-                </tr>
-              ))}
-              </tbody>
-            </table>
+          <div className={styles.analysisHeaderRow}>
+            <h2>GPT screener analysis (gpt-5.4)</h2>
+            <button
+              type="button"
+              className={styles.collapseButton}
+              aria-expanded={!collapsedAnalysisSections.screener}
+              onClick={() =>
+                setCollapsedAnalysisSections((current) => ({
+                  ...current,
+                  screener: !current.screener,
+                }))
+              }
+            >
+              {collapsedAnalysisSections.screener ? "Expand table" : "Collapse table"}
+            </button>
           </div>
+          {collapsedAnalysisSections.screener ? null : (
+            <div className={styles.analysisTableWrap}>
+              <table className={styles.analysisTable}>
+                <thead>
+                  <tr>
+                    <th>View</th>
+                    <th>Symbol</th>
+                    <th>Company</th>
+                    <th>Completed</th>
+                    <th>Direction</th>
+                    <th>Confidence</th>
+                    <th>Options</th>
+                    <th>Judgment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentJobs.map((job) => {
+                    const isExpanded = expandedScreenerAnalysisRows[job.id] ?? false;
+
+                    return (
+                      <Fragment key={job.id}>
+                        <tr>
+                          <td>
+                            <button
+                              type="button"
+                              className={styles.rowToggleButton}
+                              aria-expanded={isExpanded}
+                              onClick={() =>
+                                setExpandedScreenerAnalysisRows((current) => ({
+                                  ...current,
+                                  [job.id]: !current[job.id],
+                                }))
+                              }
+                            >
+                              {isExpanded ? "Hide" : "Show"}
+                            </button>
+                          </td>
+                          <td className={styles.analysisSymbol}>{job.symbol}</td>
+                          <td>{job.rowName ?? "-"}</td>
+                          <td>{job.completedAt ? new Date(job.completedAt).toLocaleString("en-US") : "-"}</td>
+                          <td>{job.result?.direction ?? "-"}</td>
+                          <td>{typeof job.result?.confidence === "number" ? job.result.confidence.toFixed(2) : "-"}</td>
+                          <td>{job.result?.optionsAction ?? "-"}</td>
+                          <td className={styles.analysisJudgment}>{job.result?.optionsJudgment ?? "-"}</td>
+                        </tr>
+                        {isExpanded ? (
+                          <tr className={styles.analysisDetailRow}>
+                            <td colSpan={8} className={styles.analysisDetailCell}>
+                              <div className={styles.analysisDetailGrid}>
+                                <div>
+                                  <span className={styles.analysisDetailLabel}>Segment</span>
+                                  <p>{job.segment ? formatSegment(job.segment) : "-"}</p>
+                                </div>
+                                <div>
+                                  <span className={styles.analysisDetailLabel}>Rationale</span>
+                                  <p className={styles.rationale}>{job.result?.rationale ?? "-"}</p>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ) : (
         <div className={styles.analysisWrap}>
